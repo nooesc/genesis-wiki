@@ -1,1 +1,61 @@
-/* Tier styles — populated in Task 4 */
+/* ============================================
+   Genesis Wiki — Tier Content Styles
+   ============================================ */
+
+.tier-content {
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  background: var(--eve-surface);
+}
+
+.tier-what {
+  border-left-color: var(--eve-accent-primary);
+}
+
+.tier-how {
+  border-left-color: var(--eve-accent-secondary);
+}
+
+.tier-why {
+  border-left-color: var(--eve-success);
+}
+
+/* --- Why collapsible toggle --- */
+
+.tier-why__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0 8px 0;
+  width: 100%;
+  text-align: left;
+}
+
+.tier-why__label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--eve-success);
+}
+
+.tier-why__chevron {
+  font-size: 0.65rem;
+  color: var(--ifm-font-color-secondary);
+  transition: transform 0.15s ease;
+}
+
+/* --- Shadows per theme --- */
+
+:root .tier-content {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="dark"] .tier-content {
+  box-shadow: none;
+}
