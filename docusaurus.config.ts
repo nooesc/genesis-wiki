@@ -43,6 +43,10 @@ const config: Config = {
       items: [
         { type: "docSidebar", sidebarId: "wiki", label: "Docs", position: "left" },
         {
+          type: "custom-tierToggle",
+          position: "right",
+        },
+        {
           href: "https://github.com/nooesc/genesis",
           label: "GitHub",
           position: "right",
