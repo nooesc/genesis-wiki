@@ -4,13 +4,203 @@ description: "The think-act-think cycle"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/agent_loop.rs
-last_synced_commit: "0000000"
+  - crates/genesis-core/src/compress.rs
+last_synced_commit: "878d55b"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Agent Loop?
+
+Think of the agent loop as a conversation between a thinker and a doer, happening inside Eve's brain. When you send a message, here is what happens:
+
+1. **Think** -- Eve reads your message and decides what to do. She might answer directly, or she might realize she needs to take action first (like reading a file, running a command, or searching the web).
+2. **Act** -- If Eve decided she needs to do something, she does it. She runs the tool, gets the result, and feeds it back into her thinking process.
+3. **Think again** -- With the tool result in hand, Eve reconsiders. Does she have enough information to answer? Or does she need another action?
+
+This cycle repeats until Eve has a complete answer for you, or until a safety limit is reached (like running out of turns or budget).
+
+The loop is the heart of what makes Eve more than a simple chatbot. A chatbot just replies. Eve can plan, execute multi-step tasks, recover from errors, and know when to stop and ask you for help. If a tool keeps failing, she detects the pattern and tries a different approach. If the conversation gets too long, she summarizes the older parts to stay within memory limits.
+
+Every interaction you have with Eve -- whether through the CLI, the HTTP API, a Telegram bot, or a scheduled job -- flows through this same loop. It is the single execution path for all agent behavior.
 
 </What>
+
+<How>
+
+## Configuration
+
+The agent loop is controlled by `AgentLoopConfig`. Here are the key parameters:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_turns` | `usize` | `20` | Maximum LLM round-trips per user message |
+| `max_iterations` | `Option<usize>` | `None` | Lifetime cap on total LLM calls across all user turns |
+| `max_context_messages` | `Option<usize>` | `None` | Maximum conversation messages kept in context |
+| `max_context_tokens` | `Option<u32>` | `None` | Token threshold for context compression |
+| `budget_limit` | `Option<f64>` | `None` | USD spending cap for the session |
+| `max_concurrency` | `usize` | `4` | Max parallel tool executions |
+| `tool_timeout_secs` | `u64` | `120` | Per-tool execution timeout |
+| `memory_nudge_interval` | `Option<usize>` | `15` | Inject memory-save reminder every N tool calls |
+| `temperature` | `Option<f64>` | `None` | LLM sampling temperature |
+| `thinking` | `Option<ThinkingConfig>` | `None` | Extended thinking/reasoning parameters |
+| `response_format` | `Option<ResponseFormat>` | `None` | Constrained output format (JSON, schema) |
+
+## The Loop Pattern
+
+```
+User message
+    |
+    v
++--[Check cancellation]---> cancelled? --> return early
+|   |
+|   v
+|  [Check turn/iteration limits] ---> exceeded? --> return with warning
+|   |
+|   v
+|  [Prune context if needed] (token compression or message count)
+|   |
+|   v
+|  [Build ChatCompletionRequest]
+|   |
+|   v
+|  [Check response cache] ---> cache hit? --> use cached response
+|   |
+|   v
+|  [Call LLM (with failover)] ---> all providers failed? --> error
+|   |
+|   v
+|  [Parse response]
+|   |
+|   +---> Tool calls requested?
+|   |        |
+|   |        v
+|   |     [Execute tools in parallel (up to max_concurrency)]
+|   |        |
+|   |        v
+|   |     [Track failures, inject stuck-loop nudge if needed]
+|   |        |
+|   |        v
+|   |     [Inject memory/skill nudges if thresholds met]
+|   |        |
+|   |        +--- loop back to top
+|   |
+|   +---> Text response (no tool calls)
+|            |
+|            v
+|         [Run output guardrails]
+|            |
+|            v
+|         [Save trajectory, fire hooks, return AgentResult]
+```
+
+## Result Structure
+
+Every turn returns an `AgentResult`:
+
+```rust
+pub struct AgentResult {
+    pub response: String,              // Final text response
+    pub turns_used: usize,             // LLM round-trips consumed
+    pub tool_calls_made: usize,        // Total tool invocations
+    pub finished_naturally: bool,       // true unless hit limits
+    pub total_input_tokens: u32,       // Cumulative prompt tokens
+    pub total_output_tokens: u32,      // Cumulative completion tokens
+    pub estimated_cost: Option<f64>,   // USD estimate if pricing available
+    pub pending_clarification: Option<String>, // Paused for user input
+}
+```
+
+## Streaming
+
+The loop also supports a streaming variant (`run_turn_streaming`) that emits `StreamEvent` values as the LLM generates tokens:
+
+- `Chunk(&str)` -- a text fragment from the LLM
+- `TurnStarted` -- a new LLM call is beginning
+- `ToolCallStart { name, call_id, args_summary }` -- a tool is about to run
+- `ToolCallEnd { name, call_id, duration_ms, success }` -- a tool finished
+- `TokenUsage { input_tokens, output_tokens }` -- cumulative token counts
+- `ClarificationNeeded { question }` -- the agent needs user input
+- `Warning(&str)` -- non-fatal alerts (budget approaching, context pruned)
+
+## Stuck Loop Detection
+
+If the same tool fails 3 consecutive times, the loop injects a system message:
+
+> *"[Stuck loop detected] The tool(s) X have failed multiple times in a row. Stop retrying the same approach. Consider: (1) using a different tool, (2) modifying the arguments, (3) breaking the task into smaller steps, or (4) asking the user for clarification."*
+
+The failure counter resets on success or after the nudge fires.
+
+## Context Compression
+
+When `max_context_tokens` is set and prompt tokens exceed 85% of that limit, the loop:
+
+1. Masks old tool outputs (lightweight, no LLM call)
+2. Protects the first 3 and last 4 non-system messages
+3. Summarizes the middle messages using the LLM
+4. Replaces the dropped messages with a `[Prior conversation summary]` system message
+
+</How>
+
+<Why>
+
+## Why a Simple Loop Instead of a State Machine?
+
+The agent loop is a `loop {}` with early returns, not a formal state machine with named states and transitions. This was a deliberate choice:
+
+- **Readability**: The entire flow fits in one `run_turn_with_images` method. A developer can read it top-to-bottom and understand exactly what happens. State machines spread logic across transition handlers, making the full picture harder to see.
+- **Predictability**: Every iteration follows the same path -- check limits, call LLM, handle response. There are no hidden transitions or state-dependent behaviors that could surprise you.
+- **Debuggability**: Stack traces point to the exact line in the loop. With a state machine, you would need to reconstruct which state you were in and what triggered the transition.
+
+The trade-off is that adding new loop behaviors (like the skill creation nudge or guardrails) means adding more code to a single large function. In practice, these additions are injected at well-defined hook points, so the function remains manageable.
+
+## The 85% Compression Threshold
+
+Context compression triggers at 85% of `max_context_tokens`, not at 100%. This margin exists because:
+
+- **Summarization adds tokens**: The LLM call to summarize dropped messages itself requires context. If we waited until 100%, there might not be room for the summarization request.
+- **Tool results are unpredictable**: A tool might return a large result that pushes tokens over the limit between compression checks. The 15% buffer absorbs these spikes.
+- **First 3 + last 4 protection**: The compression protects 7 messages (the initial context and recent conversation). These protected messages consume tokens, so the droppable middle needs room to shrink before the total overflows.
+
+The protection counts (3 head, 4 tail) were chosen empirically. The head messages typically include the user's original question and the agent's initial plan. The tail messages contain the most recent tool results that the agent is actively reasoning about.
+
+## Stuck Loop Detection: Why 3 Failures?
+
+Three consecutive failures strikes a balance:
+
+- **1 would be too aggressive**: Transient errors (network timeouts, file locks) resolve on retry. Nudging after one failure would prevent natural recovery.
+- **5+ would be too lenient**: By the third identical failure, the LLM is clearly stuck in a loop. Each failed iteration wastes tokens and time. Three failures is enough to confirm a pattern without excessive waste.
+
+After the nudge fires, the failure counter for that tool resets. This means the agent gets another 3 attempts with the new approach before being nudged again, preventing infinite nudge cycles.
+
+## Cancellation via AtomicBool
+
+The loop checks an `Arc<AtomicBool>` at each turn boundary. This design was chosen over alternatives like tokio cancellation tokens because:
+
+- **Tool execution is synchronous**: Many tools (shell, filesystem) use blocking I/O on dedicated threads. Tokio's `CancellationToken` works well for async code but cannot interrupt a blocking `std::process::Command`.
+- **Graceful exit**: Checking at turn boundaries means the loop finishes the current tool execution before stopping. This prevents partial state (half-written files, orphaned processes).
+- **Cross-task sharing**: The `Arc<AtomicBool>` can be shared with gateway handlers, CLI signal handlers, or timeout watchdogs. Any holder can cancel the loop with a single atomic store.
+
+The handle is obtained via `cancellation_handle()` and triggered with `handle.store(true, Ordering::Relaxed)`. Relaxed ordering is sufficient because cancellation is a one-way latch -- once set to true, it stays true.
+
+## UTF-8 Safe Truncation
+
+Tool output is capped at 64 KiB to prevent context window overflow from a single tool result. The truncation logic (`truncate_output` in genesis-tools) walks backward from the byte limit to find a valid UTF-8 character boundary, then further back to find a newline boundary. This ensures:
+
+- No invalid UTF-8 sequences that would corrupt JSON serialization
+- No mid-line cuts that could confuse the LLM (e.g., cutting a JSON object mid-key)
+- A clean `... (output truncated)` marker so the LLM knows the output was cut
+
+The 64 KiB limit was chosen as roughly 16K tokens -- large enough for most useful tool output, small enough to leave room for the rest of the conversation context.
+
+## Provider Failover
+
+The loop supports a primary client plus an ordered list of fallback clients. When the primary fails (network error, rate limit, server error), each fallback is tried in sequence. A separate `tool_client` can be configured for turns following tool results, allowing a cheaper model for the "process tool output and decide next step" turns while keeping a more capable model for user-facing responses.
+
+## Memory and Skill Nudges
+
+Every 15 tool calls (configurable), the loop injects a memory consolidation reminder as a system message. This encourages the agent to persist useful observations rather than losing them when the session ends. Similarly, when a single turn involves 8+ tool calls, a skill creation nudge fires, suggesting the agent package its multi-step approach as a reusable skill. Both nudges are injected as system messages rather than modifying the user prompt, so they guide the agent without altering the conversation the user sees.
+
+</Why>
