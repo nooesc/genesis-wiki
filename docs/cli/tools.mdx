@@ -1,14 +1,91 @@
 ---
 title: "genesis tools"
-description: "List available tools"
+description: "List all available tools"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-tools/src/builtins/mod.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="tools" usage="genesis tools" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis tools`?
+
+The `tools` command prints a complete list of every tool available to Eve in the current configuration. This includes all 60+ built-in tools (shell, filesystem, search, web browsing, vision, image generation, TTS, memory, skills, subagents, git, and more) plus any tools exposed by connected MCP servers.
+
+Use this command to understand exactly what Eve can do in your environment, to audit which tools are active before running sensitive operations, or to verify that an MCP server's tools are visible to the agent.
 
 </What>
+
+<How>
+
+## Options
+
+`genesis tools` takes no options. It reads the tool registry and active MCP connections, then prints each tool with its name and description.
+
+## Examples
+
+**List all tools:**
+```bash
+genesis tools
+```
+
+**Machine-readable JSON output:**
+```bash
+genesis tools --json
+```
+
+**Filter with standard Unix tools:**
+```bash
+genesis tools | grep git
+genesis tools | grep -i memory
+```
+
+## Tool Categories
+
+The built-in tool registry is grouped into functional categories:
+
+| Category | Example Tools |
+|----------|---------------|
+| Shell & Process | `shell`, `kill_process` |
+| Filesystem | `read_file`, `write_file`, `edit_file`, `glob`, `tree`, `patch` |
+| Search | `search_files`, `ripgrep` |
+| Web | `web_search`, `browse`, `fetch_url` |
+| Vision & Media | `vision`, `image_gen`, `tts`, `transcribe` |
+| Memory | `memory_add`, `memory_search`, `memory_list` |
+| Skills | `skill_create`, `skill_get`, `skill_list` |
+| Subagents | `spawn_subagent` |
+| Git | `git_status`, `git_diff`, `git_commit` |
+| Todo | `todo_add`, `todo_list`, `todo_complete` |
+| Docker & SSH | `docker_run`, `ssh_exec` |
+| Home Assistant | `ha_list_entities`, `ha_get_state`, `ha_call_service` |
+
+</How>
+
+<Why>
+
+## Registry Pattern
+
+Tools are registered at startup using the `ToolHandler` trait. Each tool is a struct with a `run()` method and a JSON Schema describing its parameters. The registry pattern means new tools can be added without modifying the agent loop — just implement the trait, register it in `builtins/mod.rs`, and it becomes available.
+
+## MCP Tool Integration
+
+When MCP servers are configured and connected, their tools appear in the `genesis tools` output alongside built-in tools. From the agent loop's perspective, MCP tools and built-in tools are identical: both go through the same dispatch path. The `genesis tools` output shows which tools come from MCP by indicating the source server name.
+
+## Fuzzy Suggestions
+
+If the model calls a tool with an unrecognised name, the agent loop computes edit distance between the unknown name and all registered tool names, then includes the closest matches in the error message returned to the model. This helps recover gracefully from minor naming mistakes in tool calls, especially with models that were not trained on the exact Genesis tool schema.
+
+## Tool Output Limits
+
+All tool outputs are truncated at 64 KiB with UTF-8-safe boundaries before being returned to the model. This prevents large tool results (such as reading a huge file) from overflowing the context window unexpectedly.
+
+</Why>
+
+</CliCommand>

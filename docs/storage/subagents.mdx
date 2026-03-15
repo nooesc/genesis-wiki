@@ -1,7 +1,9 @@
 ---
-title: "Subagent Store"
-description: "Subagent metadata"
+title: "SubagentStore"
+description: "Child agent loop metadata, status lifecycle, and result storage"
 crate: genesis-storage
+source_files:
+  - crates/genesis-storage/src/lib.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +11,73 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+`SubagentStore` tracks child agent loops spawned by a parent session. When the agent calls the `subagent` tool, a `StoredSubagent` record is created linking the parent session to a new child session. The record tracks the subagent's lifecycle: `pending` → `running` → `completed` or `failed`.
+
+**`subagents` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | Unique subagent identifier |
+| `parent_session_id` | TEXT NOT NULL | Session that spawned this subagent |
+| `child_session_id` | TEXT NOT NULL | Session created for the subagent loop |
+| `name` | TEXT NOT NULL | Human-readable label for the subagent |
+| `task` | TEXT NOT NULL | Task description passed to the subagent |
+| `status` | TEXT NOT NULL | `pending`, `running`, `completed`, or `failed` |
+| `result` | TEXT | Output text when status = `completed` |
+| `error` | TEXT | Error message when status = `failed` |
+| `created_at` | TEXT | Creation timestamp |
+| `completed_at` | TEXT | Set when status transitions to terminal state |
 
 </What>
+
+<How>
+
+### Creating a subagent record
+
+```rust
+let store = SubagentStore::new(&database_path);
+let subagent = store.create(
+    "sa-uuid-1",
+    "parent-session-id",
+    "child-session-id",
+    "Research assistant",
+    "Find the top 5 papers on attention mechanisms published in 2024",
+)?;
+// subagent.status == "pending"
+```
+
+### Status lifecycle
+
+```rust
+store.set_running("sa-uuid-1")?;
+// status -> "running"
+
+store.set_completed("sa-uuid-1", "Found 5 papers: ...")?;
+// status -> "completed", result set, completed_at set
+
+store.set_failed("sa-uuid-1", "LLM API timeout after 3 retries")?;
+// status -> "failed", error set, completed_at set
+```
+
+### Querying subagents
+
+```rust
+let subagent: Option<StoredSubagent> = store.get("sa-uuid-1")?;
+
+let children: Vec<StoredSubagent> = store.list_by_parent("parent-session-id")?;
+// Ordered by created_at ASC
+```
+
+The `GET /sessions/{id}/subagents` API endpoint uses `list_by_parent` to enumerate all subagents for a session.
+
+</How>
+
+<Why>
+
+**Separate child session.** Each subagent runs as a full agent loop in its own session. Storing `child_session_id` separately from `parent_session_id` means the subagent's conversation history is fully accessible through the normal session APIs, and the parent can inspect the subagent's reasoning trace.
+
+**Terminal state timestamps.** `completed_at` is set for both `completed` and `failed` states, making it easy to calculate subagent runtime duration with a simple subtraction — no need to scan messages.
+
+**No foreign key to sessions.** The `subagents` table does not declare a foreign key to `sessions`. This is deliberate: the parent or child session might be deleted independently, and the subagent record should remain as a historical record of what was delegated.
+
+</Why>

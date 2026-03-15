@@ -1,7 +1,11 @@
 ---
 title: "OpenAI"
-description: "OpenAI provider"
+description: "OpenAI provider configuration, model support, and pricing"
 crate: genesis-provider
+source_files:
+  - crates/genesis-provider/src/resolve.rs
+  - crates/genesis-provider/src/model_metadata.rs
+  - crates/genesis-provider/src/pricing.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +13,77 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+The OpenAI backend uses the standard Chat Completions format with no translation layer — OpenAI is the reference format that all other adapters convert to and from. It also includes the `openai-codex` sub-backend for the Responses API (used by o3/o4 models), which uses a different endpoint and an OAuth-based auth flow.
+
+**Supported models (with known metadata):**
+
+| Model | Context | Max output | Vision | Thinking |
+|---|---|---|---|---|
+| `gpt-4.1` | 1,048,576 | 32,768 | Yes | No |
+| `gpt-4.1-mini` | 1,048,576 | 32,768 | Yes | No |
+| `gpt-4.1-nano` | 1,048,576 | 32,768 | Yes | No |
+| `o4-mini` | 200,000 | 100,000 | Yes | Yes |
+
+**Pricing (USD per million tokens, as of early 2026):**
+
+| Model | Input | Output |
+|---|---|---|
+| `gpt-4.1` | $2.00 | $8.00 |
+| `gpt-4.1-mini` | $0.40 | $1.60 |
+| `gpt-4.1-nano` | $0.10 | $0.40 |
+| `gpt-4o` | $2.50 | $10.00 |
+| `gpt-4o-mini` | $0.15 | $0.60 |
+| `o3` | $2.00 | $8.00 |
+| `o3-mini` | $1.10 | $4.40 |
+| `o4-mini` | $1.10 | $4.40 |
 
 </What>
+
+<How>
+
+### Configuration
+
+```yaml
+# ~/.genesis/config.yaml
+model: gpt-4.1
+backend: openai
+```
+
+API key is read from `OPENAI_API_KEY`. The default base URL is `https://api.openai.com/v1`. Requests go to `/chat/completions`.
+
+### Using the Codex (Responses API) backend
+
+The `openai-codex` backend targets the Responses API endpoint, which supports o3 and o4 models with extended reasoning:
+
+```yaml
+model: o3-pro
+backend: openai-codex
+```
+
+`client_from_config` will attempt OAuth resolution via `genesis auth login` credentials first. If no session exists, it falls back to the `OPENAI_API_KEY` environment variable.
+
+On a 401 response, the client automatically clears the credential cache, re-resolves fresh OAuth tokens, and retries the request once.
+
+### Custom base URL
+
+To point at a proxy or enterprise endpoint:
+
+```yaml
+backend: openai
+model: gpt-4.1
+base_url: "https://my-proxy.example.com/v1"
+```
+
+### Streaming
+
+OpenAI streaming responses include a final `[DONE]` sentinel and a usage chunk (via `stream_options: {include_usage: true}`). The `complete_stream` path sets `stream_options` automatically.
+
+</How>
+
+<Why>
+
+**OpenAI format as the canonical interface.** Every LLM provider in Genesis ultimately produces a `ChatCompletionResponse` in OpenAI format. Choosing OpenAI as the reference means zero conversion for the most common provider and a clear target format for all adapter implementations.
+
+**Codex as a separate backend.** Treating `openai-codex` as a distinct backend (rather than a model flag on `openai`) lets the auth layer, endpoint selection, and request serialization differ without conditional branches scattered across the generic OpenAI path.
+
+</Why>

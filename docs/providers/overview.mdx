@@ -1,9 +1,11 @@
 ---
 title: "Providers Overview"
-description: "Provider abstraction and ChatClient"
+description: "ChatClient abstraction, SSE streaming, retry with backoff, and OpenAI as the common wire format"
 crate: genesis-provider
 source_files:
   - crates/genesis-provider/src/client.rs
+  - crates/genesis-provider/src/resolve.rs
+  - crates/genesis-provider/src/lib.rs
 last_synced_commit: "0000000"
 ---
 
@@ -11,6 +13,92 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+`genesis-provider` provides a single `ChatClient` that talks to any LLM provider. All providers speak the OpenAI Chat Completions format internally. Provider-specific adapters (Anthropic, Gemini) translate transparently in both directions so every caller in `genesis-core` deals with one request/response type.
+
+**Supported backends:**
+
+| Backend name | Default base URL | Auth method |
+|---|---|---|
+| `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` env var, `Authorization: Bearer` header |
+| `anthropic` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` env var, `x-api-key` header |
+| `gemini` / `google` | `https://generativelanguage.googleapis.com/v1beta` | `GEMINI_API_KEY` / `GOOGLE_API_KEY` env var, URL query param |
+| `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` env var, `Authorization: Bearer` header |
+| `openai-codex` | OAuth-managed Codex inference URL | OAuth token via `genesis-auth`, falls back to env var |
+| Any other name | `https://api.openai.com/v1` | `OPENAI_API_KEY` env var |
+| Custom `base_url` | Provided URL | Configured `api_key_env` or backend default |
+
+**Two operation modes:**
+
+- `complete(request)` — blocking HTTP POST, returns `ChatCompletionResponse`
+- `complete_stream(request)` — SSE stream, returns `ChatCompletionChunkStream`
 
 </What>
+
+<How>
+
+### Building a client
+
+The primary entry point is `client_from_config`:
+
+```rust
+let client = client_from_config(
+    "anthropic",
+    "claude-sonnet-4-20250514",
+    None,           // base_url (None = use default)
+    None,           // api_key_env (None = use standard var)
+).await?;
+```
+
+Internally this calls `resolve(backend, model, base_url, api_key_env, &env)` which produces a `ResolvedProvider`, then `ChatClient::new(&provider)` which builds a `reqwest::Client` with backend-appropriate headers.
+
+For `openai-codex`, `client_from_config` first attempts OAuth credential resolution via `genesis-auth`. If the user is not logged in, it falls back to environment variable resolution.
+
+After building the client, a background warmup task fires a HEAD request to pre-establish the TCP+TLS connection before the first real call.
+
+### Sending a request
+
+```rust
+let response: ChatCompletionResponse = client.complete(request).await?;
+let stream: ChatCompletionChunkStream = client.complete_stream(request).await?;
+```
+
+### Retry logic
+
+`send_with_retry` retries up to 3 times with exponential backoff on:
+- HTTP 429 (rate limit) — respects `Retry-After` header if present
+- HTTP 5xx server errors
+- Network-level failures (connection refused, timeout)
+
+Backoff delays: 1 s, 2 s, 4 s, capped at 8 s. Non-retryable errors (4xx other than 429) are returned immediately.
+
+### Prompt caching
+
+Backends `anthropic` and `openrouter` support prompt caching via `cache_control`. Before sending a request, `inject_cache_control` modifies the request body:
+
+1. System messages: converted from a plain string to a content-block array with `cache_control: {"type": "ephemeral"}` on the text block.
+2. Last tool definition: receives `cache_control` at the tool level.
+
+Other backends do not receive `cache_control` injection.
+
+### Cost estimation
+
+```rust
+use genesis_provider::pricing;
+
+let cost = pricing::estimate_cost("claude-sonnet-4", 5000, 800)?;
+// cost.input_cost, output_cost, total_cost in USD
+```
+
+Pricing uses exact match then longest-prefix match, stripping provider prefixes like `anthropic/`.
+
+</How>
+
+<Why>
+
+**Single wire format.** By choosing OpenAI's Chat Completions format as the canonical internal type, genesis-core never needs to know which provider is configured. Provider-specific quirks (Anthropic's `messages` endpoint, Gemini's content-parts, Codex's Responses API) are entirely isolated in their respective adapter functions.
+
+**Per-backend header setup.** Building the `reqwest::Client` with headers at construction time (rather than per-request) means authentication headers are embedded in the connection pool, reducing per-request overhead.
+
+**Connection warmup.** Spawning a background HEAD request after client construction means DNS resolution, TCP handshake, and TLS negotiation complete concurrently with system prompt building and tool registration. By the time the agent loop makes its first LLM call, the connection is likely already established.
+
+</Why>

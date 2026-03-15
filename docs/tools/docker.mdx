@@ -1,16 +1,80 @@
 ---
 title: "Docker"
-description: "Docker command execution"
+description: "Run commands inside a Docker container via docker exec"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/docker.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="docker_exec" module="builtins/docker.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Runs a shell command inside a running Docker container using `docker exec`. The command is executed via `sh -c` inside the container, so shell features like pipes, redirects, and environment variable expansion all work as expected.
+
+This is distinct from using `shell_exec` on the host — the command runs inside the container's filesystem, network namespace, and environment. Useful for inspecting or interacting with containerized services without needing to open a separate terminal session.
+
+Output (stdout and stderr) is captured, combined, and truncated to 64 KiB following the same rules as the shell tool.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `container` | `string` | Yes | Container name or ID |
+| `command` | `string` | Yes | Shell command to run inside the container |
+| `working_dir` | `string` | No | Working directory inside the container (`-w` flag) |
+| `user` | `string` | No | User to run as inside the container (`-u` flag) |
+
+## Example
+
+```json
+{
+  "name": "docker_exec",
+  "arguments": {
+    "container": "my-postgres",
+    "command": "psql -U postgres -c 'SELECT count(*) FROM users;'",
+    "user": "postgres"
+  }
+}
+```
+
+**Response:**
+```
+ count
+-------
+   142
+(1 row)
+```
+
+## Example: Check logs directory
+
+```json
+{
+  "name": "docker_exec",
+  "arguments": {
+    "container": "my-app",
+    "command": "tail -20 /var/log/app/error.log",
+    "working_dir": "/app"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+The tool invokes `docker exec [-w dir] [-u user] container sh -c command` directly via `std::process::Command`. It does not validate the container name or check whether Docker is installed — if `docker` is not on the PATH or the container does not exist, the OS error is returned as an `ExecutionFailed` with the original error message.
+
+The command is always run through `sh -c` (not split into arguments) so that shell syntax like pipes and redirects works correctly. This mirrors the behavior of `shell_exec` and is what users expect when writing shell commands.
+
+</Why>
+
+</ToolRef>

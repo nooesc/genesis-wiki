@@ -1,16 +1,73 @@
 ---
 title: "Reason"
-description: "Extended reasoning"
+description: "Query a secondary LLM for a second opinion or specialized reasoning"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/reason.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="reason_with_model" module="builtins/reason.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Enables multi-model collaboration by letting Eve delegate a specific sub-task to a different LLM. The main agent sends a one-shot prompt to a secondary model and receives its response, which can then be integrated into the primary reasoning chain.
+
+Typical use cases include: getting a second opinion on a code review, using a math-specialized model for calculations, delegating creative writing to a model better tuned for it, or verifying reasoning through an independent chain of thought.
+
+The response includes token usage so the caller can account for the cost of the secondary call.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `prompt` | `string` | Yes | — | The prompt to send to the secondary model |
+| `model` | `string` | Yes | — | Model name (e.g. `gpt-4o`, `claude-opus-4-5`, `deepseek-chat`) |
+| `backend` | `string` | No | `"openai"` | Provider backend: `openai`, `anthropic`, `openrouter`, etc. |
+| `system` | `string` | No | — | Optional system prompt for the secondary model |
+| `temperature` | `string` | No | — | Sampling temperature (e.g. `"0.7"`) |
+| `max_tokens` | `string` | No | — | Maximum tokens to generate |
+
+## Example
+
+```json
+{
+  "name": "reason_with_model",
+  "arguments": {
+    "prompt": "Review this Rust function for correctness and suggest improvements:\n\nfn add(a: i32, b: i32) -> i32 { a + b }",
+    "model": "claude-opus-4-5",
+    "backend": "anthropic",
+    "system": "You are an expert Rust code reviewer. Be concise and direct."
+  }
+}
+```
+
+**Response:**
+```
+Response from claude-opus-4-5 (anthropic):
+
+The function is correct for its stated purpose. For a production codebase, consider:
+1. Using checked_add to handle overflow: a.checked_add(b)
+2. Adding a doc comment explaining the expected range...
+
+[tokens: 145 in / 87 out]
+```
+
+</How>
+
+<Why>
+
+The tool uses `genesis_provider::resolve` and `ChatClient` — the same provider abstraction used by the main agent loop — so it benefits from the same retry and error-handling logic. The call is made synchronously using `tokio::task::block_in_place` because `ToolHandler::run` is a sync function but the HTTP client is async. This is safe inside a tokio context (it parks the current thread without blocking the executor's other tasks).
+
+Model and backend are both required parameters rather than defaulting to a specific model, because the whole point of this tool is deliberate model selection. If the secondary model's API key is missing, `genesis_provider::resolve` will return an error that propagates as `ToolError::ExecutionFailed`.
+
+</Why>
+
+</ToolRef>

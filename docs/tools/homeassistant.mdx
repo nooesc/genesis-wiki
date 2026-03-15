@@ -1,16 +1,224 @@
 ---
 title: "Home Assistant"
-description: "Home Assistant control"
+description: "Control smart home devices via the Home Assistant REST API"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/homeassistant.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="ha_list_entities" module="builtins/homeassistant.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Lists entities in your Home Assistant instance, optionally filtered by domain (e.g. `light`, `climate`, `sensor`) or by area name. Returns entity IDs, current states, and friendly names. Results are capped at 500 entities to prevent context overflow.
+
+Requires `HASS_TOKEN` (Long-Lived Access Token) and optionally `HASS_URL` (defaults to `http://homeassistant.local:8123`).
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `domain` | `string` | No | Filter to entities in this domain (e.g. `light`, `sensor`, `switch`) |
+| `area` | `string` | No | Filter by area name (case-insensitive substring match on `friendly_name` or `area` attribute) |
+
+## Example
+
+```json
+{
+  "name": "ha_list_entities",
+  "arguments": { "domain": "light" }
+}
+```
+
+**Response:**
+```json
+{
+  "count": 5,
+  "entities": [
+    { "entity_id": "light.living_room", "state": "on", "friendly_name": "Living Room" },
+    { "entity_id": "light.kitchen", "state": "off", "friendly_name": "Kitchen" }
+  ]
+}
+```
+
+</How>
+
+<Why>
+
+The entity list is fetched from `/api/states` which returns all entities in one call. Filtering is done client-side after the response arrives. The 500-entity cap is applied with `.take(MAX_RESPONSE_ENTITIES)` before returning results to avoid producing tool output that exceeds the context limit.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="ha_get_state" module="builtins/homeassistant.rs" crate="genesis-tools">
+
+<What>
+
+Gets the detailed state of a single Home Assistant entity, including all attributes, last-changed timestamp, and last-updated timestamp. Use this when you need richer information than `ha_list_entities` provides — for example, the exact temperature reading from a sensor, or the brightness level of a light.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `entity_id` | `string` | Yes | Entity ID in `domain.object_id` format (e.g. `sensor.outdoor_temperature`) |
+
+## Example
+
+```json
+{
+  "name": "ha_get_state",
+  "arguments": { "entity_id": "climate.living_room" }
+}
+```
+
+**Response:**
+```json
+{
+  "entity_id": "climate.living_room",
+  "state": "heat",
+  "attributes": {
+    "current_temperature": 19.5,
+    "temperature": 21.0,
+    "hvac_modes": ["off", "heat", "cool", "auto"]
+  },
+  "last_changed": "2026-03-15T08:30:00+00:00",
+  "last_updated": "2026-03-15T09:00:00+00:00"
+}
+```
+
+</How>
+
+<Why>
+
+The `entity_id` is validated with a strict regex before the API call: both the domain and object_id must be lowercase alphanumeric plus underscores, and the format must be `domain.object_id`. This prevents trivially malformed inputs from generating unnecessary API calls or misleading error messages from the HA server.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="ha_list_services" module="builtins/homeassistant.rs" crate="genesis-tools">
+
+<What>
+
+Lists available services in Home Assistant, optionally filtered to a single domain. Each service entry includes its name, description, and available fields. Use this to discover what services you can call before using `ha_call_service`.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `domain` | `string` | No | Filter to services in this domain (e.g. `light`, `climate`) |
+
+## Example
+
+```json
+{
+  "name": "ha_list_services",
+  "arguments": { "domain": "light" }
+}
+```
+
+</How>
+
+<Why>
+
+Service fields are compacted to name-to-description mappings rather than returning the full HA schema (which includes selectors, examples, and advanced metadata). This keeps the output concise enough for the model to consume without needing to parse a deeply nested schema document.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="ha_call_service" module="builtins/homeassistant.rs" crate="genesis-tools">
+
+<What>
+
+Calls a Home Assistant service to control devices. This is how Eve turns lights on and off, adjusts thermostats, locks doors, or triggers any other automation. The response includes the list of entities affected by the service call.
+
+Certain dangerous service domains are blocked for security:
+
+| Blocked domain | Reason |
+|----------------|--------|
+| `shell_command` | Arbitrary OS command execution |
+| `command_line` | Arbitrary OS command execution |
+| `python_script` | Arbitrary Python execution |
+| `pyscript` | Arbitrary Python execution |
+| `hassio` | Supervisor-level access |
+| `rest_command` | SSRF / arbitrary HTTP requests |
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `domain` | `string` | Yes | Service domain (e.g. `light`, `climate`, `lock`) |
+| `service` | `string` | Yes | Service name (e.g. `turn_on`, `set_temperature`) |
+| `entity_id` | `string` | No | Target entity ID (validated if provided) |
+| `data` | `string` | No | JSON string with additional service data (e.g. `{"brightness": 128}`) |
+
+## Example: Turn on a light
+
+```json
+{
+  "name": "ha_call_service",
+  "arguments": {
+    "domain": "light",
+    "service": "turn_on",
+    "entity_id": "light.living_room",
+    "data": "{\"brightness\": 200, \"color_temp\": 300}"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "service": "light.turn_on",
+  "affected_entities": [
+    { "entity_id": "light.living_room", "state": "on" }
+  ]
+}
+```
+
+## Example: Set thermostat temperature
+
+```json
+{
+  "name": "ha_call_service",
+  "arguments": {
+    "domain": "climate",
+    "service": "set_temperature",
+    "entity_id": "climate.living_room",
+    "data": "{\"temperature\": 22}"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+The `data` parameter is parsed from a JSON string at call time. If parsing fails, it falls back to an empty object rather than erroring — this is intentional because many service calls (like `turn_on` with just an `entity_id`) need no additional data. The `entity_id` is merged into the data payload after parsing, overriding any `entity_id` that might already be in the data string.
+
+</Why>
+
+</ToolRef>

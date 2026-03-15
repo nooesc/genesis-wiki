@@ -1,16 +1,271 @@
 ---
 title: "Git"
-description: "Git operations"
+description: "Git repository operations"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/git.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="git_status" module="builtins/git.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does git_status Do?
+
+`git_status` runs `git status --porcelain=v2 --branch` in a given directory and returns the result. It shows which files are staged, unstaged, untracked, or conflicted, plus the current branch and its tracking relationship. If the working tree is clean, it returns `"working tree clean"` instead of empty output.
+
+The tool defaults to the current working directory if no `path` is given, making it quick to call without arguments from inside a project.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `path` | `string` | No | `.` (cwd) | Path to the git repository root |
+
+## Example
+
+```json
+{
+  "name": "git_status",
+  "arguments": {
+    "path": "/home/user/my-project"
+  }
+}
+```
+
+**Response:**
+```
+# branch.oid a1b2c3d...
+# branch.head main
+1 .M N... 100644 100644 0 README.md README.md
+? new_file.txt
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The tool uses `--porcelain=v2` rather than the human-readable default. This format is stable across git versions and unambiguous to parse. The path is validated with `Path::new(path).exists()` before invoking git, so any error is a clear "path does not exist" message rather than a confusing git error. Output is truncated at 64 KiB using the shared `truncate_output` helper.
+
+All five git tools share a `run_git()` helper that invokes the system `git` binary via `Command::new("git")` with `current_dir()` scoped to the target repository. stdout and stderr are combined into a single response via `format_git_output()`.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="git_diff" module="builtins/git.rs" crate="genesis-tools">
+
+<What>
+
+## What Does git_diff Do?
+
+`git_diff` shows differences between the working tree, the index, and commits. By default it shows unstaged changes. Pass `staged=true` to see what is already staged for the next commit. Use `commit_range` for historical comparisons like `HEAD~3..HEAD`, and `file_paths` (space-separated) to narrow the diff to specific files. Set `name_only=true` to skip diff hunks and list only changed filenames — useful for getting a quick overview of what changed.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `path` | `string` | No | `.` | Path to the git repository |
+| `staged` | `string` | No | `"false"` | Set `"true"` to diff staged changes (`--staged`) |
+| `name_only` | `string` | No | `"false"` | Set `"true"` to list only changed filenames |
+| `commit_range` | `string` | No | -- | Commit range, e.g. `HEAD~3..HEAD` or `main..feature` |
+| `file_paths` | `string` | No | -- | Space-separated list of files to scope the diff |
+
+## Example
+
+```json
+{
+  "name": "git_diff",
+  "arguments": {
+    "path": "/home/user/my-project",
+    "staged": "true",
+    "name_only": "true"
+  }
+}
+```
+
+**Response:**
+```
+src/main.rs
+tests/integration_test.rs
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Arguments are composed into a `Vec<&str>` and passed directly to `run_git()`. The `file_paths` string is split on whitespace and appended after `--` to prevent git from interpreting filenames as flags. If there is no diff output, the tool returns `"no diff output"` rather than empty content, so the LLM has a clear signal that the diff is empty.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="git_log" module="builtins/git.rs" crate="genesis-tools">
+
+<What>
+
+## What Does git_log Do?
+
+`git_log` retrieves commit history in compact one-line-per-commit format. Results are limited to 20 entries by default. You can filter by author, date range (`since`/`until` accept git date strings like `"2 weeks ago"`), or restrict to commits that touched a specific file with `file_path`. The response metadata includes a `commit_count` field with the number of commits returned.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `path` | `string` | No | `.` | Path to the git repository |
+| `max_count` | `string` | No | `"20"` | Maximum number of commits to return |
+| `author` | `string` | No | -- | Filter commits by author name or email (passed as `--author=`) |
+| `since` | `string` | No | -- | Only commits after this date, e.g. `"1 week ago"` |
+| `until` | `string` | No | -- | Only commits before this date |
+| `file_path` | `string` | No | -- | Limit log to commits that touched this file |
+
+## Example
+
+```json
+{
+  "name": "git_log",
+  "arguments": {
+    "path": "/home/user/my-project",
+    "max_count": "5",
+    "since": "1 month ago"
+  }
+}
+```
+
+**Response:**
+```
+a1b2c3d feat: add new feature
+e4f5g6h fix: resolve edge case
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+`git log --oneline --no-decorate` produces clean, compact output without branch/tag decorations. The `commit_count` in metadata is computed by counting non-empty lines that are not the truncation marker. If no commits match the filters, the tool returns `"no commits found"` rather than empty output.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="git_commit" module="builtins/git.rs" crate="genesis-tools">
+
+<What>
+
+## What Does git_commit Do?
+
+`git_commit` creates a new commit with the provided message. It requires that changes are already staged (via `shell_exec` running `git add`) unless `all=true` is set, which auto-stages all tracked modified files before committing. This is a destructive operation — it is blocked when `allow_destructive_tools` is disabled in the runtime context.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `message` | `string` | Yes | -- | The commit message |
+| `path` | `string` | No | `.` | Path to the git repository |
+| `all` | `string` | No | `"false"` | Set `"true"` to auto-stage tracked modified files (`git commit -a`) |
+
+## Example
+
+```json
+{
+  "name": "git_commit",
+  "arguments": {
+    "path": "/home/user/my-project",
+    "message": "feat: implement user authentication"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+If git exits with a non-zero status (e.g., "nothing to commit"), the tool returns a `ToolError::ExecutionFailed` with the git error message as the reason. This prevents silent no-ops when there is nothing staged. The `check_destructive` guard runs before any git invocation, returning an error immediately if destructive tools are disabled.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="git_branch" module="builtins/git.rs" crate="genesis-tools">
+
+<What>
+
+## What Does git_branch Do?
+
+`git_branch` manages local branches with four actions: `list` (default), `create`, `switch`, and `delete`. The `delete` action requires `allow_destructive_tools` to be enabled. Attempting to switch to a non-existent branch or delete a branch with unmerged changes returns the git error directly.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `action` | `string` | No | `"list"` | One of: `list`, `create`, `switch`, `delete` |
+| `name` | `string` | Conditional | -- | Branch name — required for `create`, `switch`, `delete` |
+| `path` | `string` | No | `.` | Path to the git repository |
+
+## Example: Create a branch
+
+```json
+{
+  "name": "git_branch",
+  "arguments": {
+    "path": "/home/user/my-project",
+    "action": "create",
+    "name": "feature/new-ui"
+  }
+}
+```
+
+## Example: List all branches
+
+```json
+{
+  "name": "git_branch",
+  "arguments": {
+    "path": "/home/user/my-project"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The `list` action runs `git branch --list -a` to include remote-tracking branches. `switch` uses `git checkout` rather than the newer `git switch` for maximum compatibility across git versions. The `delete` action uses `git branch -d` (safe delete) rather than `-D` (force delete) to prevent losing unmerged commits. The response metadata includes an `action` field and, where applicable, a `branch` field with the branch name.
+
+</Why>
+
+</ToolRef>

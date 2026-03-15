@@ -1,16 +1,118 @@
 ---
 title: "Evaluation System"
-description: "Evaluation framework"
+description: "Structured evaluation framework for agent performance testing"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/eval.rs
-last_synced_commit: "0000000"
+  - crates/genesis-core/src/replay.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Evaluation System?
+
+The evaluation system provides a structured framework for testing agent performance against defined criteria. You define an `EvalSuite` containing `EvalCase` records, run the agent against them, and collect `EvalResult` records with pass/fail status, scores, token usage, and latency.
+
+The system supports both deterministic checks (exact match, substring requirements, regex patterns) and softer constraints (tool call counts, turn limits). A complete `EvalReport` aggregates results across all cases in a suite with summary statistics.
+
+The eval CLI (`genesis eval`) provides commands to run suites, generate reports, compare results across runs, and export/import trajectory data in ChatML and ShareGPT formats. The `replay` module allows replaying stored trajectory sessions to reproduce agent behavior for debugging and regression detection.
 
 </What>
+
+<How>
+
+## Defining an Eval Suite
+
+```yaml
+# math_reasoning.yaml
+name: math_reasoning
+description: "Tests mathematical reasoning capabilities"
+version: "1.0"
+tags: [math, reasoning]
+cases:
+  - id: addition_simple
+    prompt: "What is 2 + 2?"
+    difficulty: 1
+    criteria:
+      must_contain: ["4"]
+      max_turns: 1
+      max_tool_calls: 0
+
+  - id: fibonacci_with_code
+    prompt: "Write and run a Python script to print the first 10 Fibonacci numbers"
+    difficulty: 3
+    criteria:
+      must_contain: ["0", "1", "1", "2", "3", "5"]
+      min_tool_calls: 1
+      max_turns: 5
+
+  - id: json_output
+    prompt: "Return the result of 15 * 7 as JSON with key 'result'"
+    difficulty: 2
+    criteria:
+      regex_match: "\"result\"\\s*:\\s*105"
+      max_turns: 2
+```
+
+## Running Evals
+
+```bash
+# Run a suite against the current agent
+genesis eval run --suite math_reasoning.yaml
+
+# Generate a report from saved results
+genesis eval report --suite math_reasoning
+
+# Compare two runs
+genesis eval compare run-1 run-2
+
+# Export as training data
+genesis eval export-chatml --suite math_reasoning > dataset.jsonl
+```
+
+## EvalCriteria Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `must_contain` | `string[]` | Response must contain all strings (case-insensitive) |
+| `must_not_contain` | `string[]` | Response must not contain any of these |
+| `exact_match` | `string?` | Response must equal this exactly |
+| `regex_match` | `string?` | Response must match this regex |
+| `min_tool_calls` | `usize` | Minimum tool calls required |
+| `max_tool_calls` | `usize` | Maximum allowed tool calls (0 = unlimited) |
+| `max_turns` | `usize` | Maximum allowed agent turns (0 = unlimited) |
+
+## EvalReport Structure
+
+```json
+{
+  "suite_name": "math_reasoning",
+  "run_at": "2026-03-15T12:00:00Z",
+  "total": 3,
+  "passed": 2,
+  "failed": 1,
+  "pass_rate": 0.667,
+  "avg_score": 0.78,
+  "avg_duration_ms": 1250,
+  "avg_input_tokens": 420,
+  "avg_output_tokens": 185,
+  "results": [...]
+}
+```
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Criteria-based scoring over LLM judges.** Substring and regex criteria are deterministic, fast, and do not require additional LLM calls for evaluation. This makes eval runs cheap and reproducible. For cases where LLM-based judging is needed, the `scorer` field accepts a custom scorer name that can be wired to an external evaluator.
+
+**Difficulty and tags.** Difficulty levels (1-5) and tags allow filtering eval suites for quick regression checks (run only difficulty 1-2 in CI) vs. comprehensive evaluation. Tags enable thematic grouping across multiple suites.
+
+**Replay integration.** The replay module converts stored trajectory sessions into a timeline of `ReplayEvent` values (user messages, assistant messages, tool calls, tool results). This allows offline analysis of past runs and regression testing against saved golden trajectories.
+
+</Why>

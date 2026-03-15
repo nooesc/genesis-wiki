@@ -1,14 +1,136 @@
 ---
 title: "TUI Overview"
-description: "Terminal User Interface (in progress)"
+description: "Ratatui-based terminal interface for Eve — current implementation state"
 crate: genesis-tui
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-tui/src/lib.rs
+  - crates/genesis-tui/src/app.rs
+  - crates/genesis-tui/src/events.rs
+  - crates/genesis-tui/src/custom_terminal.rs
+  - crates/genesis-tui/src/frame_requester.rs
+  - crates/genesis-ui/src/
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
+:::caution In progress
+The TUI is under active development. The core event loop, terminal abstraction, and main widgets are complete, but some features (context compression via `/compact`, model config display) are still stubs.
+:::
+
 <What>
 
-*Content coming soon.*
+## What is the Genesis TUI?
+
+The TUI is a full-screen terminal interface for chatting with Eve, activated with `genesis chat` (or `genesis chat --tui`). It replaces the plain readline prompt with a ratatui-based interface that shows streaming responses in real time, displays tool calls as they execute, renders Markdown, and provides a slash-command palette.
+
+The TUI is built across two crates:
+
+- **`genesis-tui`** — The application layer: event loop, `App` state machine, widgets, rendering.
+- **`genesis-ui`** — Reusable presentation primitives: Markdown renderer, color palette, status bar, tool display, Eve banner/animation.
 
 </What>
+
+<How>
+
+## Architecture
+
+### Three event streams
+
+The event loop runs on a single `tokio::select!` loop that merges three independent channels:
+
+| Stream | Source | Events |
+|--------|--------|--------|
+| `TuiEvent` | Crossterm `EventStream` | Keyboard, paste, resize, draw timer |
+| `AgentEvent` | Agent streaming callback | Turn started/completed, text delta, tool call start/end, error |
+| `AppEvent` | Internal app state machine | Commit history, update status, show/close overlay, slash command |
+
+A fourth channel carries `Submission` values — user messages, interrupt signals, and compact requests — from the input widget to the event loop.
+
+### App state
+
+The `App` struct owns all mutable UI state:
+
+```
+App
+├── screen: AppScreen (Welcome | Chat)
+├── chat: ChatWidget
+│   ├── history: Vec<HistoryCell>  (completed turns)
+│   ├── active_cell: Option<StreamingCell>  (in-progress turn)
+│   └── input: InputWidget
+├── status_bar: StatusBarWidget
+├── overlay: Option<TranscriptOverlay>
+├── command_popup: CommandPopup
+└── frame_requester: FrameRequester
+```
+
+### Pinned future pattern
+
+Because `SessionExecutionService<'a>` borrows `&'a LoadedConfig` (not `'static`), the agent turn future cannot be `tokio::spawn`ed. Instead, it is stored as `Option<Pin<Box<dyn Future + '_>>>` and polled directly inside `select!`. This avoids unsafe lifetime tricks while still being fully async.
+
+The `make_turn_future` helper moves the user's prompt text into the future closure, so there is no cross-borrow issue between the text variable and the service reference.
+
+### Custom terminal
+
+`CustomTerminal` wraps the crossterm backend with a **dual-buffer diff renderer**:
+
+- Two `ratatui::Buffer` objects are kept: current (being drawn) and previous (last flushed).
+- After each frame, the diff between the two buffers is computed and only changed cells are written to the terminal — minimising I/O.
+- The previous buffer is reset after the swap so the next frame starts clean.
+
+This approach is derived from Codex CLI's terminal implementation.
+
+### Frame scheduling
+
+`FrameRequester` wraps a `broadcast::Sender<()>` with rate limiting. It coalesces multiple `schedule_frame()` calls within a single tick into a single draw signal, preventing redundant redraws when many events arrive in a burst.
+
+## Widgets
+
+| Widget | Description |
+|--------|-------------|
+| `WelcomeWidget` | Startup splash screen with model, cwd, and version info |
+| `ChatWidget` | Main chat area: history cells + active streaming cell + input |
+| `InputWidget` | Multi-line text input with cursor, selection, paste support |
+| `StatusBarWidget` | Single-row bar at the bottom: idle / thinking / tool-running / streaming states |
+| `TranscriptOverlay` | Fullscreen scrollable view of the session transcript |
+| `CommandPopup` | Slash-command palette shown when input starts with `/` |
+
+## Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Submit message (when not in multiline mode) |
+| `Shift+Enter` | Insert newline |
+| `Ctrl+C` | Interrupt running turn |
+| `Ctrl+L` | Show transcript overlay |
+| `Esc` | Close overlay / dismiss popup |
+| `/` at start | Open slash-command palette |
+
+## Slash commands (in-app)
+
+| Command | Description |
+|---------|-------------|
+| `/new` | Clear session and start fresh |
+| `/compact` | Trigger context compression (stub — not yet wired) |
+| `/model <name>` | Switch model for the current session |
+| `/help` | Show available commands |
+
+## genesis-ui components
+
+The `genesis-ui` crate provides:
+
+- **Markdown renderer** (`render/markdown.rs`) — Renders CommonMark Markdown to a ratatui `Buffer`. Handles headings, bold, italic, inline code, code blocks, blockquotes, and lists.
+- **Color palette** (`colors.rs`) — Semantic color constants for consistent theming across TUI and UI components.
+- **Status bar** (`status_bar.rs`) — Animated status bar with spinner states.
+- **Tool display** (`tool_display.rs`) — Formatted display of tool call invocations and results.
+- **Eve banner** (`banner/`) — Animated startup banner with Eve's avatar image (rendered as ANSI art or kitty protocol image where supported).
+
+</How>
+
+<Why>
+
+The TUI provides a significantly better interactive experience than a plain readline prompt for complex, multi-tool agent interactions. Seeing tool calls appear in real time as Eve works through a task makes it easier to understand what the agent is doing and catch problems early. The streaming text display and Markdown rendering make long responses readable without scrolling through raw ANSI escape sequences.
+
+The architectural choice to keep the turn future on the stack (pinned, not spawned) is a deliberate trade-off: it makes the lifetime management explicit in the Rust type system rather than relying on `Arc` cloning and `'static` bounds, which would require restructuring `SessionExecutionService`. The current approach is simpler and safer — at the cost of the TUI not supporting concurrent turns (which is the correct behavior for a single-user chat interface anyway).
+
+</Why>

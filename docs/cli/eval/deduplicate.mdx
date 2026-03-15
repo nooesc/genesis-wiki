@@ -1,13 +1,56 @@
 ---
 title: "eval deduplicate"
-description: "Find near-duplicate trajectories"
-last_synced_commit: "0000000"
+description: "Find near-duplicate trajectories by system prompt and first user message"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval deduplicate" usage="genesis eval deduplicate <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval deduplicate`?
+
+The `deduplicate` command scans a directory of trajectory JSON files and identifies near-duplicate trajectories — those that share the same system prompt and first user message. Duplicates can arise when running the same prompt multiple times, merging datasets from different runs, or importing external data. By default, the command only reports duplicate groups without modifying any files. Use `--remove` to delete all but the first file in each duplicate group.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Directory containing trajectory JSON files |
+| `--recursive` | `bool` | No | Recursively scan nested directories |
+| `--remove` | `bool` | No | Delete duplicate files, keeping the first file in each group |
+
+## Examples
+
+```bash
+# Find duplicates and report them (no deletion)
+genesis eval deduplicate ./trajectories
+
+# Find and delete duplicates, keeping the first in each group
+genesis eval deduplicate ./trajectories --remove
+
+# Recursively deduplicate nested directories
+genesis eval deduplicate ./trajectories --recursive --remove
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Deduplication uses a fingerprint computed from the system prompt text and the content of the first user message. Two trajectories are considered near-duplicates if their fingerprints match, regardless of how the rest of the conversation differs. Within a duplicate group, files are ordered by filename (lexicographic) and the first is kept. This "first wins" strategy is deterministic — running `--remove` twice produces the same result. For finer-grained deduplication (e.g. by session ID), use `eval merge --dedup` instead.
+
+</Why>
+
+</CliCommand>

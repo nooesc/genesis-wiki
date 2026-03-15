@@ -1,14 +1,71 @@
 ---
 title: "genesis storage"
-description: "Storage path management"
+description: "Inspect and bootstrap the Genesis SQLite database"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-storage/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="storage" usage="genesis storage <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis storage`?
+
+The `storage` command gives you direct access to the Genesis SQLite database management operations. It has two sub-commands: `path` prints the resolved path to the database file, and `bootstrap` creates the schema if it does not exist yet.
+
+These are low-level utilities for setup and diagnostics. Most users only need `storage bootstrap` once (or via `genesis doctor --bootstrap-storage`), but `storage path` is handy in scripts that need to locate or back up the database.
 
 </What>
+
+<How>
+
+## Sub-commands
+
+| Sub-command | Description |
+|-------------|-------------|
+| `path` | Print the resolved path to the SQLite database file |
+| `bootstrap` | Create the SQLite schema and print a health report |
+
+## Examples
+
+**Print the database path:**
+```bash
+genesis storage path
+```
+
+**Create the schema (safe to run multiple times):**
+```bash
+genesis storage bootstrap
+```
+
+**Bootstrap with JSON output:**
+```bash
+genesis --json storage bootstrap
+```
+
+**Use the path in a backup script:**
+```bash
+cp "$(genesis storage path)" ~/backups/genesis-$(date +%Y%m%d).db
+```
+
+</How>
+
+<Why>
+
+## Schema Bootstrap
+
+The schema is created idempotently via `CREATE TABLE IF NOT EXISTS` statements in the `genesis-storage` crate's `bootstrap()` function. Running `storage bootstrap` on an already-initialized database is safe — it only creates missing tables and indexes, never drops existing data.
+
+The `storage path` sub-command resolves the database path through the full config loading pipeline, so it correctly handles `--config` overrides and non-default `storage.database_path` settings. This is the canonical way to find where the database lives rather than hard-coding `~/.genesis/genesis.db`.
+
+The health report from `storage bootstrap` shows the same output as `genesis doctor --bootstrap-storage` — schema version, table counts, and any warnings about missing directories.
+
+</Why>
+
+</CliCommand>

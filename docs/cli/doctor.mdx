@@ -1,14 +1,90 @@
 ---
 title: "genesis doctor"
-description: "Config and storage readiness"
+description: "Inspect local config and storage readiness"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-core/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="doctor" usage="genesis doctor [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis doctor`?
+
+The `doctor` command runs a pre-flight check on your Genesis installation and reports the health of each component. It inspects the config file (presence, parsability, key values), the SQLite database (path, existence, schema version), and your environment (API key variables, required binaries).
+
+Run `genesis doctor` any time Genesis behaves unexpectedly, or when setting up a new machine. It tells you precisely what is missing or misconfigured so you can fix it before trying to start a chat or serve the API.
 
 </What>
+
+<How>
+
+## Options
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--bootstrap-storage` | `bool` | Create the SQLite schema if it does not exist yet |
+| `--verify` | `bool` | Verify API connectivity with a live test request |
+
+## Examples
+
+**Basic health check:**
+```bash
+genesis doctor
+```
+
+**Bootstrap storage and verify API connectivity:**
+```bash
+genesis doctor --bootstrap-storage --verify
+```
+
+**Machine-readable JSON output:**
+```bash
+genesis doctor --json
+```
+
+**Use with a non-default config:**
+```bash
+genesis doctor --config /path/to/config.yaml --verify
+```
+
+## What it Checks
+
+| Check | Description |
+|-------|-------------|
+| Config file | Exists, is parsable, has required fields |
+| Provider backend | Known backend name, non-empty model |
+| API key env var | Environment variable is set |
+| Database path | Parent directory exists |
+| Database schema | Schema version matches expected |
+| Binary dependencies | Any required external tools are on `$PATH` |
+
+</How>
+
+<Why>
+
+## Fail Fast Before Runtime
+
+The doctor check runs synchronously and exits before any LLM calls are made. This makes it the fastest way to diagnose configuration issues. The same underlying `run_doctor` function is called at startup in some code paths, but `genesis doctor` gives you the report interactively with coloured output.
+
+## `--bootstrap-storage`
+
+If the SQLite database file or its parent directory does not exist, the doctor report will show a warning but will not create the schema. The `--bootstrap-storage` flag triggers `genesis_storage::bootstrap()`, which creates the file, initialises the schema, and runs any pending migrations. After this flag is used, the database is ready for use.
+
+## `--verify`
+
+The `--verify` flag makes a real LLM API call to confirm end-to-end connectivity. It reports the provider backend, model, and round-trip latency in milliseconds, or a detailed error if the call failed. This is the quickest way to confirm that your API key is valid and the provider endpoint is reachable.
+
+## JSON Output
+
+With `--json`, the doctor report is serialised as a JSON object with structured fields for each check. This is useful in CI pipelines or provisioning scripts that need to programmatically determine whether a Genesis installation is ready.
+
+</Why>
+
+</CliCommand>

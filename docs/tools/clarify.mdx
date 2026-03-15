@@ -1,16 +1,84 @@
 ---
 title: "Clarify"
-description: "Request clarification"
+description: "Ask the user a structured clarifying question before proceeding"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/clarify.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="clarify" module="builtins/clarify.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Allows Eve to ask the user a structured clarifying question instead of guessing at ambiguous intent. When the agent needs information it cannot reasonably infer — a preference, a missing constraint, a choice between multiple valid approaches — it uses this tool to pause and request input rather than proceeding with a potentially wrong assumption.
+
+The tool output is marked with `requires_input: true` in its metadata, which the agent loop uses to signal that a user response is expected before continuing.
+
+Optionally, the question can be accompanied by a numbered list of choices to guide the user toward a concrete answer.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `question` | `string` | Yes | The clarifying question to ask the user (cannot be empty or whitespace-only) |
+| `choices` | `string` | No | Comma-separated list of options to present (e.g. `"React, Vue, Svelte"`) |
+
+## Example: Open question
+
+```json
+{
+  "name": "clarify",
+  "arguments": {
+    "question": "Should I write the tests using the existing pytest setup or start a new test suite?"
+  }
+}
+```
+
+**Response:**
+```
+[Clarification needed]
+Should I write the tests using the existing pytest setup or start a new test suite?
+```
+
+## Example: With choices
+
+```json
+{
+  "name": "clarify",
+  "arguments": {
+    "question": "Which database should I use for this project?",
+    "choices": "PostgreSQL, SQLite, MongoDB"
+  }
+}
+```
+
+**Response:**
+```
+[Clarification needed]
+Which database should I use for this project?
+
+Options:
+  1. PostgreSQL
+  2. SQLite
+  3. MongoDB
+```
+
+</How>
+
+<Why>
+
+The tool itself is stateless — it simply formats the question and returns it as output. The `requires_input: true` metadata flag is the signal to the surrounding execution context that the agent loop should stop and surface the question to the user rather than continuing to the next LLM turn.
+
+An empty or whitespace-only question is rejected with an `ExecutionFailed` error because a blank clarification is meaningless and would confuse the user. Choices are parsed by splitting on commas, so individual option text cannot contain commas. For options that need commas, use numbered alternatives in the question text itself.
+
+</Why>
+
+</ToolRef>

@@ -1,14 +1,70 @@
 ---
 title: "genesis nudge"
-description: "Self-reflection consolidation"
+description: "Run a self-reflection nudge to consolidate learning"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-core/src/nudge.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="nudge" usage="genesis nudge" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis nudge`?
+
+The `nudge` command triggers a self-reflection pass in which Eve reviews recent session history and stored memories, identifies new facts worth remembering, and updates the memory store accordingly. It is a way to manually trigger the same learning consolidation that the agent loop performs automatically after extended sessions.
+
+Think of a nudge as asking Eve to pause and reflect: "What did I learn recently that I should remember for next time?" The result is a more accurate and up-to-date memory store, which makes future sessions more context-aware without requiring you to re-explain things.
 
 </What>
+
+<How>
+
+## Options
+
+`genesis nudge` takes no options.
+
+## Examples
+
+**Trigger a self-reflection nudge:**
+```bash
+genesis nudge
+```
+
+**Chain with a new session to ensure fresh context:**
+```bash
+genesis nudge && genesis chat
+```
+
+## What Happens
+
+1. Genesis loads recent session messages from SQLite.
+2. It loads the current memory store.
+3. It sends a reflection prompt to the LLM asking it to identify new facts to store or old facts to update.
+4. Any new or updated memories are written to the database.
+5. A summary of changes is printed.
+
+</How>
+
+<Why>
+
+## Automatic vs Manual Nudge
+
+The agent loop triggers a memory nudge automatically after sessions that cross a length threshold (turn count and total token count). The `genesis nudge` CLI command exists for cases where you want to trigger this process on demand — for example, after importing a large batch of session history, or after a series of short sessions that individually did not meet the automatic threshold.
+
+## Memory Consistency
+
+The nudge LLM call is made through the same `SessionExecutionService` path as all other interactions, using the configured provider and model. The reflection prompt instructs the model to avoid duplicating existing memories and to correct outdated facts rather than appending conflicting versions. This keeps the memory store consistent over time rather than accumulating contradictions.
+
+## Skill Creation Nudge
+
+A related nudge — the skill creation nudge — fires after complex multi-step turns (5+ tool calls, 3+ turns) and suggests that the procedure could be saved as a reusable skill. This is a separate code path from the memory nudge but follows the same pattern: the agent loop detects a signal and prompts for consolidation.
+
+</Why>
+
+</CliCommand>

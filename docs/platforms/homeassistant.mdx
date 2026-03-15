@@ -1,14 +1,92 @@
 ---
 title: "Home Assistant"
-description: "Home Assistant webhook"
+description: "Home Assistant webhook integration"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/platforms/homeassistant.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Home Assistant Platform?
+
+The Home Assistant platform connects Eve to Home Assistant automations via a synchronous webhook. Unlike the messaging platforms (Telegram, Slack, etc.) that spawn background tasks, this handler runs the agent synchronously and returns the result in the HTTP response body. This is necessary because Home Assistant automations block on the HTTP call and use the response data in subsequent automation actions.
+
+A Home Assistant automation POSTs a JSON payload containing a `message` (the prompt) and an optional `entity_id` (used to create a stable session ID like `ha-{entity_id}`). The agent processes the request and returns the response text, session ID, turn count, and tool call count as JSON.
+
+This makes the Home Assistant platform suitable for scenarios like:
+- "Run this prompt every morning and set a sensor value to the result."
+- "When a door opens, ask Eve what to do and log the response."
+- "Control smart home devices through natural language via Eve's HA control tools."
+
+Authentication uses a static token passed as a Bearer header or `X-HomeAssistant-Token` header.
 
 </What>
+
+<How>
+
+## Setup
+
+1. In Home Assistant, create a webhook automation and point it to `https://your-server/homeassistant/webhook`.
+2. Set the environment variable:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `HOMEASSISTANT_TOKEN` | Yes | Static token for authenticating webhook requests |
+| `HOMEASSISTANT_URL` | Optional | Home Assistant base URL (for agent's HA control tools) |
+| `HOMEASSISTANT_LONG_LIVED_TOKEN` | Optional | Long-lived access token (for agent's HA control tools) |
+
+## Webhook Endpoint
+
+```
+POST /homeassistant/webhook
+Authorization: Bearer <HOMEASSISTANT_TOKEN>
+```
+
+The token can also be passed as `X-HomeAssistant-Token` or `X-Home-Assistant-Token`.
+
+## Request Body
+
+```json
+{
+  "message": "What is the current temperature in the living room?",
+  "entity_id": "automation.morning_check",
+  "title": "Morning check"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `message` | string | Yes | The prompt to send to the agent |
+| `entity_id` | string | No | Used as session key (`ha-{entity_id}`); defaults to `ha-default` |
+| `title` | string | No | Session title shown in the gateway UI |
+
+## Response Body
+
+```json
+{
+  "response": "The living room temperature is 21.5°C.",
+  "session_id": "ha-automation.morning_check",
+  "turns_used": 2,
+  "tool_calls_made": 1
+}
+```
+
+The `response` field contains the agent's final text. The automation can use this value directly in subsequent HA actions (e.g., `notify.mobile_app`, `input_text.set_value`).
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Synchronous response.** All other platform handlers spawn background tasks and return immediately. The HA handler waits for the agent to finish before responding. Home Assistant's `rest_command` integration (and similar) expects the data it needs in the HTTP response, not delivered asynchronously to a callback. A synchronous handler is the only viable design.
+
+**entity_id as session key.** Home Assistant automations often run multiple times (e.g., daily). Using the `entity_id` as the session key gives each automation its own persistent conversation thread, so the agent can remember context from previous runs of the same automation.
+
+**Flexible token extraction.** Home Assistant's HTTP integration passes tokens in different headers depending on the integration version. Supporting `Authorization: Bearer`, `X-HomeAssistant-Token`, and `X-Home-Assistant-Token` makes the integration work across different HA setups without additional configuration.
+
+</Why>

@@ -8,6 +8,77 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+Genesis is a Rust binary called `genesis`. You compile it from source using Cargo, Rust's build tool and package manager. Think of it like building a piece of custom furniture — you get the raw materials (the source code), assemble them with a specific toolchain, and end up with a single executable that you can run anywhere.
+
+There are two ways to get it running: building directly on your machine, or using the provided Docker image, which packages the binary inside a container alongside a ready-made Linux environment. The Docker approach is useful when you want to run the HTTP gateway server in a predictable, isolated environment — especially on servers or in CI pipelines.
+
+Building locally is faster for day-to-day development because you skip the container overhead and can recompile only what changed.
 
 </What>
+
+<How>
+
+### Prerequisites
+
+- **Rust toolchain** — install from [rustup.rs](https://rustup.rs). Genesis uses the 2021 edition and requires a reasonably recent stable toolchain (the Dockerfile uses `rust:1.86`).
+- **OpenSSL / pkg-config** — required on Linux. On Debian/Ubuntu: `apt-get install pkg-config libssl-dev`. macOS ships with these.
+- **Git** — to clone the repository.
+
+### Build from source
+
+```bash
+git clone https://github.com/nooesc/genesis
+cd genesis
+
+# Debug build (faster to compile, larger binary)
+cargo build --workspace
+
+# Release build (optimized, LTO, stripped debug info)
+cargo build --workspace --release
+```
+
+The release binary lands at `target/release/genesis`. Add it to your `PATH` or run it in place:
+
+```bash
+./target/release/genesis --help
+```
+
+### Verify the build
+
+```bash
+cargo test --workspace   # ~1340 tests, all should pass
+cargo clippy --workspace -- -D warnings   # zero warnings
+```
+
+### Docker
+
+A multi-stage `Dockerfile` is included. The builder stage compiles from `rust:1.86-slim`; the runtime stage copies only the final binary into `debian:bookworm-slim`:
+
+```bash
+docker build -t genesis .
+docker run -p 3000:3000 \
+  -e OPENAI_API_KEY=sk-... \
+  -v genesis-data:/data/genesis \
+  genesis
+```
+
+The container defaults to `genesis serve --host 0.0.0.0 --port 3000`. Override the command to run `genesis chat` or any other subcommand.
+
+| Environment variable      | Default                    | Purpose                        |
+|---------------------------|----------------------------|--------------------------------|
+| `GENESIS_DATA_DIR`        | `/data/genesis`            | Directory for SQLite database  |
+| `GENESIS_DATABASE_PATH`   | `/data/genesis/genesis.db` | Explicit database file path    |
+
+</How>
+
+<Why>
+
+Genesis uses `rusqlite` with the `bundled` feature, which statically links SQLite into the binary. This means there are no runtime library dependencies beyond a libc and CA certificates — the Docker runtime image is intentionally minimal.
+
+The release profile is tuned for small binary size (`opt-level = "s"`) rather than maximum execution speed, with LTO and single codegen unit enabled. This keeps the container image lean while still producing a fully optimized binary.
+
+The build is a standard Cargo workspace — all 13 crates compile together in a single `cargo build` invocation. Incremental compilation means that after the first build only changed crates recompile, so day-to-day iteration is fast even on the release profile.
+
+Docker is provided primarily for deploying the gateway server (`genesis serve`) in production. For the interactive `genesis chat` TUI, running natively is recommended because Docker adds latency and complicates terminal I/O.
+
+</Why>

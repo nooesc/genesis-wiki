@@ -1,16 +1,74 @@
 ---
 title: "Skills Overview"
-description: "Skill system architecture"
+description: "How Eve learns, stores, and applies reusable procedures"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/skills.rs
-last_synced_commit: "0000000"
+  - crates/genesis-core/src/skill_manifest.rs
+  - crates/genesis-core/src/skills_hub.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What are Skills?
+
+Skills are reusable procedures that Eve learns from interactions and applies automatically in future conversations. A skill is a named set of step-by-step instructions paired with a trigger hint — a natural language phrase that tells Eve when to activate it.
+
+Skills sit between one-off tool use (ad-hoc) and hardcoded system prompts (static). They are dynamic: Eve creates them, improves them from feedback, and retires them when they stop working.
+
+### The lifecycle of a skill
+
+1. **Creation** — After a complex multi-tool interaction, Eve may decide to capture the process as a skill using the `skill_create` tool. Operators can also create skills via the API.
+2. **Storage** — Skills are stored in SQLite and loaded into the system prompt at the start of each turn.
+3. **Injection** — When a user's message matches a skill's trigger hint, the full instructions are injected into the active context so Eve knows exactly what steps to follow.
+4. **Invocation** — Eve follows the skill instructions, calls the required tools, and records the outcome via `skill_record_usage`.
+5. **Refinement** — If a skill fails or produces poor results, Eve updates the instructions. The version counter increments on each update.
 
 </What>
+
+<How>
+
+## Context-aware skill injection
+
+The skill injection strategy adapts to how many skills exist:
+
+- **10 or fewer skills** — All skills are injected with their full instructions. No filtering needed.
+- **More than 10 skills** — A brief listing of all skills is injected, plus full instructions for skills whose trigger hints match the current user prompt. This prevents wasting context on irrelevant instructions.
+
+The brief listing uses the format:
+```
+- **deploy-app** (v2): Deploy the application to production ← auto-loaded
+- **code-review** (v3): Review code for bugs and style issues
+```
+
+The `← auto-loaded` marker tells Eve which skills were selected for full injection. Eve can call `skill_get` to load the full instructions for any other skill on demand.
+
+## Self-improvement loop
+
+Skills include automatic nudges toward self-improvement:
+
+- After each invocation, Eve calls `skill_record_usage` with the outcome (`success`, `partial`, or `failure`) and optional feedback text.
+- The system prompt instructs Eve: "if a skill's instructions can be improved based on what you learned, update it with `skill_create`."
+- The aggregate stats (success/failure counts, refinement count) are injected back into the prompt so Eve knows which skills are reliable and which need work.
+
+## Skills vs. memories vs. prompts
+
+| | Skills | Memories | System prompt |
+|--|--------|----------|---------------|
+| Scope | Reusable procedures | Per-user facts | Global context |
+| Updated by | Agent or API | Agent only | Config file |
+| Versioned | Yes | No | No |
+| Triggered by | User request | Always injected | Always injected |
+
+</How>
+
+<Why>
+
+Skills are the primary mechanism for Genesis agents to compound knowledge over time. Without skills, every complex interaction must be re-learned from scratch. With skills, Eve builds a personal library of tested procedures that it executes reliably — making it progressively more capable with each successful interaction.
+
+The self-improvement loop closes the feedback cycle: Eve not only uses skills but actively maintains them, creating a foundation for long-term autonomous operation.
+
+</Why>

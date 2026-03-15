@@ -1,13 +1,52 @@
 ---
 title: "eval export-sharegpt"
-description: "Export as ShareGPT JSONL"
-last_synced_commit: "0000000"
+description: "Export a directory of trajectories as ShareGPT JSONL"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval export-sharegpt" usage="genesis eval export-sharegpt <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval export-sharegpt`?
+
+The `export-sharegpt` command converts a directory of Genesis trajectory JSON files into ShareGPT JSONL format. Each trajectory becomes one JSON object per line, serialized as `{"conversations": [{"from": "human", "value": "..."}, {"from": "gpt", "value": "..."}]}`. The output is written to stdout. Use this when your fine-tuning toolchain expects ShareGPT-formatted data, which is common for Axolotl and several HuggingFace-based training scripts.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Directory containing trajectory JSON files |
+| `--recursive` | `bool` | No | Recursively scan nested directories for trajectory JSON files |
+
+## Examples
+
+```bash
+# Export trajectories to ShareGPT JSONL
+genesis eval export-sharegpt ./trajectories > sharegpt.jsonl
+
+# Recursively export from nested directories
+genesis eval export-sharegpt ./trajectories --recursive > sharegpt.jsonl
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+ShareGPT uses `"from": "human"` / `"from": "gpt"` role names rather than ChatML's `"role": "user"` / `"role": "assistant"`. The system prompt, if present, is stored as a separate `{"from": "system", "value": "..."}` entry at the start of the conversation array. Tool calls within assistant turns are serialized as text in the assistant's `"value"` field, since ShareGPT does not have a native tool-call representation. This makes ShareGPT best suited for instruction-following fine-tunes rather than tool-use fine-tunes.
+
+</Why>
+
+</CliCommand>

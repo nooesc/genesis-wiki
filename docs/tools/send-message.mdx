@@ -1,16 +1,96 @@
 ---
 title: "Send Message"
-description: "Platform messaging"
+description: "Send messages to Slack, Telegram, Discord, WhatsApp, or Home Assistant"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/send_message.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="send_message" module="builtins/send_message.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Sends a text message to an external messaging platform. Supports five platforms: Slack, Telegram, Discord, WhatsApp, and Home Assistant. The agent uses this to proactively notify users, deliver results to specific channels, or send alerts when running autonomously as a scheduled task.
+
+Each platform requires its own API credentials to be set as environment variables. Platform names are case-insensitive; `SLACK`, `Slack`, and `slack` are all accepted.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `platform` | `string` | Yes | Target platform: `slack`, `telegram`, `discord`, `whatsapp`, or `homeassistant` |
+| `channel` | `string` | Yes | Destination identifier (see platform notes below) |
+| `message` | `string` | Yes | Text content to send |
+| `thread_id` | `string` | No | Slack thread timestamp or Telegram reply-to message ID |
+
+### Platform Notes and Required Credentials
+
+| Platform | `channel` value | Required env var(s) |
+|----------|----------------|---------------------|
+| `slack` | Channel ID (e.g. `C0123456789`) or name | `SLACK_BOT_TOKEN` |
+| `telegram` | Chat ID (numeric, e.g. `123456789`) | `TELEGRAM_BOT_TOKEN` |
+| `discord` | Channel ID (numeric) | `DISCORD_BOT_TOKEN` |
+| `whatsapp` | Recipient phone number (e.g. `+15551234567`) | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` |
+| `homeassistant` | Service target (e.g. `notify.persistent_notification` or `notify.mobile_app_myphone`) | `HOMEASSISTANT_URL`, `HOMEASSISTANT_LONG_LIVED_TOKEN` |
+
+### Character Limits
+
+| Platform | Limit | Behavior when exceeded |
+|----------|-------|------------------------|
+| Telegram | 4096 chars | Split into multiple messages automatically |
+| Discord | 2000 chars | Truncated with `...` |
+| WhatsApp | 4096 chars | Truncated with `...` |
+
+## Example: Slack notification
+
+```json
+{
+  "name": "send_message",
+  "arguments": {
+    "platform": "slack",
+    "channel": "C0123456789",
+    "message": "Deployment finished successfully. 42 tests passed."
+  }
+}
+```
+
+**Response:**
+```
+Message sent to Slack channel C0123456789 (ts: 1741600800.123456)
+```
+
+## Example: Telegram with reply threading
+
+```json
+{
+  "name": "send_message",
+  "arguments": {
+    "platform": "telegram",
+    "channel": "123456789",
+    "message": "Here is your daily digest...",
+    "thread_id": "42"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+**Message splitting for Telegram:** Telegram enforces a hard 4096-character limit per message. The `split_message` function splits on newlines first, then word boundaries, using char-boundary-safe byte arithmetic to avoid panics on multi-byte Unicode characters (emoji, CJK, etc.). The first chunk gets the `reply_to_message_id` if provided; subsequent chunks are sent as plain messages in the same chat.
+
+**Home Assistant service routing:** The `channel` parameter for Home Assistant is a `domain.service` string. If no dot is present, `notify` is assumed as the domain. This lets users write `persistent_notification` instead of `notify.persistent_notification` for convenience. The tool POSTs to `/api/services/{domain}/{service}` with `{"message": ..., "title": "Genesis Agent"}`.
+
+**Blocking HTTP client:** All platform calls use a `reqwest::blocking::Client` with a 15-second timeout, initialized once via `OnceLock`. The blocking client is appropriate here because `ToolHandler::run` is a synchronous function.
+
+</Why>
+
+</ToolRef>

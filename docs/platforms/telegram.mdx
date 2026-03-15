@@ -2,13 +2,88 @@
 title: "Telegram"
 description: "Telegram bot integration"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/platforms/telegram.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Telegram Platform?
+
+The Telegram platform connects Eve to Telegram chats via the Telegram Bot API webhook. Once configured, users can send messages to Eve directly through any Telegram chat or group where the bot is a member, and receive AI-generated replies.
+
+Eve handles a rich set of Telegram message types automatically:
+
+- **Text messages** are passed directly to the agent.
+- **Voice messages** are downloaded from Telegram and transcribed via the Whisper API before reaching the agent.
+- **Audio files** (uploaded MP3, M4A, etc.) are similarly auto-transcribed.
+- **Photos** are described by metadata and file ID; the agent can call the vision tool to analyze them.
+- **Stickers** are analyzed using a vision LLM (with results cached by `file_unique_id` in SQLite) and described as natural-language context for the agent.
+- **Animated and video stickers** fall back to an emoji-based context string since they cannot be analyzed as static images.
+
+Each Telegram chat has a stable session ID (`tg-{chat_id}`), so conversation history persists across messages. Telegram requires a 200 OK response within a few seconds, so agent execution is spawned in a background Tokio task and the reply is sent asynchronously via `sendMessage`.
+
+New users must complete DM pairing before the agent processes their messages. Unknown senders receive a one-time pairing code to authorize with the gateway API.
 
 </What>
+
+<How>
+
+## Setup
+
+1. Create a bot via @BotFather on Telegram.
+2. Set the following environment variables:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Yes | Bot API token from @BotFather |
+| `TELEGRAM_WEBHOOK_SECRET` | Yes | Secret token for webhook verification |
+| `OPENAI_API_KEY` | For voice | Required for Whisper transcription |
+
+3. Register the webhook URL with Telegram:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://your-server/telegram/webhook", "secret_token": "<SECRET>"}'
+```
+
+## Webhook Endpoint
+
+```
+POST /telegram/webhook
+Header: X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_WEBHOOK_SECRET>
+```
+
+Telegram sends a JSON `TelegramUpdate` body. The handler verifies the secret token using constant-time comparison, dispatches on message type, and returns `200 OK` immediately.
+
+## Message Limits
+
+Telegram limits messages to 4096 characters. Long agent responses are automatically split at newline or word boundaries into multiple sequential `sendMessage` calls, with only the first chunk quoting the original message.
+
+## Voice Transcription
+
+Voice messages follow a three-step path: `getFile` → download audio bytes → POST to `/audio/transcriptions` (Whisper). The transcribed text is prefixed with `[Voice message transcription (Ns)]:` before reaching the agent. If transcription fails, a fallback metadata string is used instead.
+
+## Sticker Analysis
+
+Static stickers (`.webp`, `.png`) are downloaded, base64-encoded, and sent to the vision LLM with the prompt: "Describe this sticker in 1-2 sentences." The result is cached in `StickerCacheStore` keyed by `file_unique_id`. Cache hits avoid redundant LLM calls for the same sticker.
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Asynchronous reply delivery.** Telegram's webhook contract requires a fast HTTP response. Deferring agent execution to a background task decouples network latency from LLM processing time, preventing webhook timeouts on complex multi-tool turns.
+
+**Per-chat session IDs.** Using `tg-{chat_id}` as the session key means each chat has its own persistent conversation history. Group chats and DMs each get separate sessions naturally.
+
+**Sticker caching.** Analyzing the same sticker repeatedly with a vision LLM would be wasteful. The `StickerCacheStore` (SQLite) ensures each unique sticker is analyzed at most once, with the description reused on subsequent sends.
+
+**Whisper fallback.** Auto-transcription is best-effort. If the OpenAI API key is absent or transcription fails, the agent still receives a useful fallback message describing the audio file, rather than silently dropping the message.
+
+</Why>

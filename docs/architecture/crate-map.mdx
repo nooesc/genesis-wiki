@@ -1,13 +1,153 @@
 ---
 title: "Crate Map"
 description: "13-crate dependency diagram"
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Crate Map?
+
+Genesis is divided into 13 Cargo crates arranged in a strict dependency hierarchy. Think of it as a building: the foundation crates at the bottom have no knowledge of the floors above them, and each higher floor can only see downward — never sideways to a crate at the same level, and never upward to something that depends on it.
+
+At the very bottom sit `genesis-types`, `genesis-storage`, `genesis-auth`, and `genesis-config` — crates with no internal dependencies on each other that provide the primitive vocabulary (shared types, persistence, credentials, configuration) the rest of the system uses. Above them is the middle layer: `genesis-provider` (talking to LLMs), `genesis-tools` (executing actions), and `genesis-mcp` (connecting to external tool servers). On top of all of that sits `genesis-core`, the crate that orchestrates agent behavior. The UI layer (`genesis-ui`, `genesis-tui`) and the delivery layer (`genesis-gateway`, `genesis-cli`) complete the stack, with the `apps/genesis` binary at the very top tying everything together.
+
+This arrangement means you can understand, test, or replace any crate in isolation without touching the ones that depend on it.
 
 </What>
+
+<How>
+
+## Crate Reference
+
+### `genesis-types` — Shared Types
+
+**Depends on:** nothing (no internal dependencies)
+
+The foundation of the whole system. Defines enums and structs that every other crate uses: `ConversationRole`, `ConversationMessage`, `DeliveryPlatform`, `ModelProviderKind`, `ModelSelection`, `ToolDefinition`, `RuntimeEvent`, `StopReason`, `UsageStats`, and the request/response envelope types (`ProviderTurnRequest`, `ProviderTurnResponse`). All types derive `Serialize`/`Deserialize` and `Clone`. See [Type System](./type-system) for detail.
+
+---
+
+### `genesis-storage` — SQLite Persistence
+
+**Depends on:** nothing (no internal dependencies)
+
+Single-file SQLite database (bundled via `rusqlite`). Schema bootstrapped in `bootstrap()`. Provides eight stores: `SessionStore` (sessions + messages), `MemoryStore` (FTS5-indexed memories), `ScheduleStore` (cron schedules), `SkillStore` + `SkillFileStore`, `UserModelStore` (user trait model), `SubagentStore`, `SandboxStore`, `PairingStore`, and `ResponseCacheStore`. All store methods take `&str` database path and open their own connections.
+
+---
+
+### `genesis-auth` — Authentication
+
+**Depends on:** nothing (no internal dependencies)
+
+OAuth device code flow, token storage, and automatic refresh for the `openai-codex` backend. Implements the Codex credential resolution chain: check in-memory cache → read from auth store on disk → refresh if expired. Handles migration from Codex CLI (`~/.codex/`) auth stores.
+
+---
+
+### `genesis-config` — Configuration
+
+**Depends on:** nothing (no internal dependencies)
+
+Loads `~/.genesis/config.yaml` (or `.toml`). Merges environment variable overrides. Supports named profiles. Key config sections: `ProviderConfig` (backend, model, base_url, api_key_env), `RuntimeConfig` (max_turns, budget_limit, tool_timeout, concurrency, context limits), `StorageConfig` (database_path), `GatewayConfig` (idle_timeout, rate_limit_rpm), `TerminalConfig` (docker/ssh sandbox backends).
+
+---
+
+### `genesis-provider` — LLM HTTP Client
+
+**Depends on:** `genesis-auth`, `genesis-types`
+
+Async HTTP client for OpenAI-compatible Chat Completions endpoints. A single `ChatClient` handles all providers — the only difference is endpoint, auth header format, and an optional translation layer for Anthropic and Gemini native wire formats. Features: exponential-backoff retry (3 attempts, 1–8s), `Retry-After` header honoring, SSE streaming, prompt caching injection (Anthropic `cache_control`), connection warmup, and response size limits (4 MiB). See [Provider Abstraction](./provider-abstraction) for detail.
+
+---
+
+### `genesis-mcp` — MCP Client
+
+**Depends on:** `genesis-config`, `genesis-types`
+
+`McpManager` manages connections to one or more MCP (Model Context Protocol) servers over stdio or HTTP transports. Auto-reconnects on transport/timeout errors. Stores server configs so reconnection can be attempted. Exposes Genesis's own built-in tools as an MCP server via `run_stdio_server`.
+
+---
+
+### `genesis-tools` — Built-in Tools
+
+**Depends on:** `genesis-provider`, `genesis-storage`, `genesis-types`
+
+Registry of 60+ built-in tools: shell execution, filesystem (read, write, patch, tree, glob), web search + scraping, vision, image generation, TTS, transcription, memory, skill management, subagent spawning, git, todo, export, trajectory, docker, SSH, Home Assistant, kill_process, and more. Each tool is a struct implementing `ToolHandler::run()`. Registered in `builtins/mod.rs` with JSON Schema parameter definitions. Tool output truncated at 64 KiB with UTF-8-safe boundaries.
+
+---
+
+### `genesis-core` — Agent Brain
+
+**Depends on:** `genesis-auth`, `genesis-config`, `genesis-mcp`, `genesis-provider`, `genesis-storage`, `genesis-tools`, `genesis-types`
+
+The most important crate. Contains:
+
+- **`agent_loop.rs`** — `AgentLoop`: think-act-think cycle with stuck loop detection, context compression, tool parallelism, streaming, budget enforcement, and cancellation. See [Agent Loop](./agent-loop).
+- **`execution.rs`** — `SessionExecutionService`: unified execution path for CLI, gateway, and scheduler. See [Execution Service](./execution-service).
+- **`system_prompt.rs`** — `SystemPromptBuilder`: composes system prompts with platform hints, skills, memories, user model, and context files.
+- **`guardrails.rs`** — Output guardrails and context security scanning.
+- **`hooks.rs`** — `HookRunner`: shell-script hooks for PreToolCall, PostToolCall, PreTurn, PostTurn, OnError, OnComplete lifecycle events.
+- **`skills.rs`** — Skill loading, SKILL.md parsing (agentskills.io spec), skill hub client.
+- **`scheduler.rs`** — Background cron job executor polling every minute.
+
+---
+
+### `genesis-gateway` — HTTP API
+
+**Depends on:** `genesis-config`, `genesis-core`, `genesis-mcp`, `genesis-provider`, `genesis-storage`, `genesis-tools`, `genesis-types`
+
+Axum-based HTTP server with 50+ routes: chat (blocking + streaming), sessions, memories, skills, schedules, user traits, subagents, health, and usage. Platform webhook handlers: Telegram, Discord, Slack, WhatsApp, Home Assistant. HMAC-SHA256 and Ed25519 signature verification, IP-based rate limiting, shared `reqwest::Client`, DM pairing system for messaging platform authorization.
+
+---
+
+### `genesis-ui` — Shared UI Components
+
+**Depends on:** nothing (no internal dependencies)
+
+Shared terminal rendering primitives used by both `genesis-cli` and `genesis-tui`. Markdown rendering via `termimad`, syntax highlighting via `syntect`, ANSI color utilities via `owo-colors`, and Unicode-width-aware layout helpers.
+
+---
+
+### `genesis-tui` — Terminal UI
+
+**Depends on:** `genesis-ui`, `genesis-core`, `genesis-types`, `genesis-config`
+
+Full-screen `ratatui`-based terminal interface with inline viewport, dual-buffer diffing, and a rate-limited draw scheduler. Implements the agent adapter pattern with pinned futures, TuiEvent/AgentEvent/AppEvent types, and a DECSTBM scroll region for scrollback history.
+
+---
+
+### `genesis-cli` — CLI Commands
+
+**Depends on:** all other crates
+
+30+ `clap`-derived subcommands: `chat`, `serve`, `run`, `eval`, `batch`, `login`, `logout`, `doctor`, `config`, `status`, `sessions`, `skills`, `schedule`, `model`, `tools`, `info`, `nudge`, `init`, `bootstrap`, `memory`, `insights`, and more. Wires together config loading, service initialization, and user-facing output formatting.
+
+---
+
+### `apps/genesis` — Binary Entry Point
+
+**Depends on:** `genesis-cli`, `genesis-tui`
+
+The compiled binary. Parses global flags (`--log-format`, `--config`), initializes `tracing-subscriber` (plain text or JSON logging via `GENESIS_LOG_FORMAT=json`), and delegates to `genesis-cli`.
+
+</How>
+
+<Why>
+
+## Why So Many Crates?
+
+The 13-crate split is not accidental. Each split was made to enforce a specific boundary:
+
+**`genesis-types` is zero-dependency by design.** If shared types could depend on anything, circular dependency chains would emerge almost immediately. By keeping types pure, every other crate can import them freely.
+
+**`genesis-storage` does not know about agents.** Storage knows how to persist messages, memories, and sessions. It does not know what an agent loop is, what a tool is, or what a provider is. This means the database schema can evolve independently of business logic, and tests can use a real SQLite database in a `tempfile::tempdir()` without starting up any agent machinery.
+
+**`genesis-tools` depends on `genesis-provider`.** Some tools (web browsing, vision, image generation) need to call LLMs directly. The dependency is intentional: tools are allowed to be smart. However, `genesis-tools` does not depend on `genesis-core` — tools cannot know about the agent loop that invokes them, which prevents a category of coupling bugs.
+
+**`genesis-core` and `genesis-gateway` are peers.** Both depend on the same lower-level crates. The gateway is not a wrapper around the CLI — it builds its own `SessionExecutionService` instances, connects its own MCP managers, and manages its own session lifecycles. This means the gateway can optimize for concurrent request handling without sharing state with the CLI's single-session model.
+
+**`genesis-auth` is independent.** Authentication is security-sensitive and needs to be auditable in isolation. Keeping it out of `genesis-config` and `genesis-provider` makes the credential resolution chain (OAuth → disk → env var) explicit and testable without touching any LLM client code.
+
+</Why>

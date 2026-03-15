@@ -4,13 +4,111 @@ description: "Crate map and design philosophy"
 crate: genesis
 source_files:
   - Cargo.toml
-last_synced_commit: "0000000"
+  - CLAUDE.md
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is Genesis?
+
+Genesis is a Rust port of [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent), an open-source AI agent written in Python. Its resident identity is **Eve** — a capable assistant who can plan multi-step tasks, execute code, read and write files, browse the web, and remember things across conversations.
+
+Think of Genesis as a stack of concentric rings. At the center is the **agent loop**: a tight cycle of thinking and acting that drives all behavior. Wrapped around it is the **execution service**: a single code path that handles every way a user can talk to Eve — whether through the command line, an HTTP API, a Telegram bot, or a scheduled cron job. The outer rings are the supporting systems: storage (SQLite), tools (60+ built-in capabilities), provider adapters (OpenAI, Anthropic, Gemini), MCP servers, and the gateway that exposes Eve to the internet.
+
+The project is organized as a Cargo workspace with 13 crates. Each crate has a single, clearly stated responsibility and a defined set of downstream dependencies. No crate depends on a crate that sits above it in the stack — the dependency flow is strictly one-directional, from the binary entry point down to shared primitives. This means a developer can understand `genesis-storage` without knowing anything about the HTTP gateway, and can swap out the provider layer without touching the tool system.
+
+Genesis was built to be a production-grade agent runtime, not a research prototype. All error paths use typed errors (`thiserror`), all async code targets `tokio`, and the codebase maintains zero clippy warnings.
 
 </What>
+
+<How>
+
+## Crate Dependency Flow
+
+```
+apps/genesis (binary)
+└── genesis-cli (30+ subcommands)
+    ├── genesis-auth (OAuth, token refresh, Codex credentials)
+    ├── genesis-tui (terminal UI, event loop, agent adapter)
+    │   ├── genesis-ui (shared UI components, rendering)
+    │   ├── genesis-core
+    │   ├── genesis-types
+    │   └── genesis-config
+    ├── genesis-core (agent loop, execution service, system prompt, hooks)
+    │   ├── genesis-auth
+    │   ├── genesis-config
+    │   ├── genesis-mcp (MCP client: stdio + HTTP transports)
+    │   │   ├── genesis-config
+    │   │   └── genesis-types
+    │   ├── genesis-provider (LLM HTTP client, SSE streaming, retry)
+    │   │   ├── genesis-auth
+    │   │   └── genesis-types
+    │   ├── genesis-storage (SQLite, schema v6, 8 store types)
+    │   ├── genesis-tools (60+ built-in tools, registry pattern)
+    │   │   ├── genesis-provider
+    │   │   ├── genesis-storage
+    │   │   └── genesis-types
+    │   └── genesis-types (shared types, zero internal deps)
+    ├── genesis-config (YAML/TOML config, env var merging, profiles)
+    └── genesis-gateway (Axum HTTP API, webhooks, rate limiting)
+        ├── genesis-config
+        ├── genesis-core
+        ├── genesis-mcp
+        ├── genesis-provider
+        ├── genesis-storage
+        ├── genesis-tools
+        └── genesis-types
+```
+
+## Build Commands
+
+```bash
+cargo build --workspace              # Build all 13 crates
+cargo build --workspace --release    # Optimized release build (LTO, strip debuginfo)
+cargo test --workspace               # Run all tests (~1340 tests)
+cargo clippy --workspace -- -D warnings  # Lint — zero warnings policy
+cargo run -- chat                    # Start an interactive chat session
+cargo run -- serve                   # Start the HTTP gateway
+```
+
+## Configuration
+
+Genesis loads configuration from `~/.genesis/config.yaml` (or `.toml`). Key sections:
+
+```yaml
+provider:
+  backend: openrouter          # openai | anthropic | gemini | openrouter | local
+  model: moonshotai/kimi-k2
+  base_url: null               # Override for local vLLM/Ollama
+
+runtime:
+  max_turns: 20
+  max_context_tokens: 200000
+  tool_timeout_secs: 120
+
+storage:
+  database_path: ~/.genesis/genesis.db
+```
+
+Environment variables override config file values. Standard API key vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`) are picked up automatically.
+
+</How>
+
+<Why>
+
+## Design Philosophy
+
+**One execution path.** The `SessionExecutionService` in `genesis-core` is the single entry point for all agent runs — CLI, HTTP API, gateway webhooks, and scheduled jobs all call the same code. This eliminates divergence bugs where the CLI handles edge cases the API doesn't, or vice versa.
+
+**OpenAI format as lingua franca.** All LLM communication uses OpenAI Chat Completions request/response types. Anthropic and Gemini have native wire formats that differ significantly, but `genesis-provider` translates transparently. Callers never see provider-specific types.
+
+**Typed errors, no panics.** Every crate defines its own `thiserror`-based error enum. Functions return `Result<T, CrateError>`. There are no `unwrap()` or `panic!()` calls in production code paths. This makes the system composable — callers always know what can go wrong.
+
+**Strict dependency layering.** The bottom of the stack (`genesis-types`, `genesis-storage`, `genesis-auth`) has zero knowledge of agent behavior. The top (`genesis-cli`, `genesis-gateway`) can depend on everything below. This makes the lower crates reusable, testable in isolation, and free from coupling to higher-level concerns.
+
+**Hermes-agent lineage.** The original Python hermes-agent pioneered several design choices that Genesis inherits: the tool registry pattern, the stuck-loop detection heuristic, skill creation nudges, and the memory consolidation reminder. Where Genesis diverges is in production hardening — retry logic, context compression, cancellation handles, and typed error propagation that a dynamic language can paper over but a compiled one cannot.
+
+</Why>

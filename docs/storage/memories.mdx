@@ -1,7 +1,9 @@
 ---
-title: "Memory Store"
-description: "Long-term memory"
+title: "MemoryStore"
+description: "Agent long-term memory with FTS5 and vector search support"
 crate: genesis-storage
+source_files:
+  - crates/genesis-storage/src/lib.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +11,86 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+`MemoryStore` persists notes that the agent writes to itself across sessions. Memories have a `kind` label (e.g., `fact`, `preference`, `reminder`) and plain-text content. They support full-text search via a `memory_search` FTS5 virtual table and optional vector embeddings via `EmbeddingStore`.
+
+**`memories` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | UUID assigned by the memory tool |
+| `session_id` | TEXT | Optional session that created this memory (SET NULL on session delete) |
+| `kind` | TEXT NOT NULL | Category label (`fact`, `preference`, `goal`, etc.) |
+| `content` | TEXT NOT NULL | Plain-text memory content |
+| `created_at` | TEXT | ISO-8601 timestamp |
+
+**`memory_embeddings` table schema (EmbeddingStore):**
+
+| Column | Type | Notes |
+|---|---|---|
+| `memory_id` | TEXT PK | Foreign key to memories (CASCADE DELETE) |
+| `embedding` | BLOB | Little-endian f32 array |
+| `model` | TEXT | Embedding model name |
+| `dimensions` | INTEGER | Vector dimension count |
+| `created_at` | TEXT | Timestamp |
 
 </What>
+
+<How>
+
+### Listing memories
+
+```rust
+let store = MemoryStore::new(&database_path);
+let recent: Vec<StoredMemory> = store.list(50)?;
+// Ordered by created_at DESC
+```
+
+### Getting a single memory
+
+```rust
+let memory: Option<StoredMemory> = store.get("mem-uuid-here")?;
+```
+
+### Full-text search
+
+```rust
+let results: Vec<StoredMemory> = store.search("Paris trip", 10)?;
+```
+
+The `search()` method lazily creates the `memory_search` FTS5 virtual table if it does not yet exist (defensive for databases created before the FTS index was added). Results are ordered by FTS5 rank and limited to `limit` entries.
+
+The `memory_search` virtual table columns are `memory_row_id UNINDEXED`, `kind`, and `content`. The join to `memories` uses the SQLite `rowid`.
+
+### Deleting a memory
+
+```rust
+let deleted: bool = store.delete("mem-uuid-here")?;
+```
+
+Returns `true` if a row was deleted.
+
+### Vector embeddings (EmbeddingStore)
+
+```rust
+let embed_store = EmbeddingStore::new(&database_path);
+
+// Store an embedding (upsert — replaces on conflict)
+embed_store.store("mem-uuid-here", &[0.1f32, 0.2, ...], "text-embedding-3-small")?;
+
+// Retrieve all for cosine similarity search
+let all: Vec<(String, Vec<f32>)> = embed_store.all_embeddings()?;
+```
+
+Embeddings are serialized as little-endian byte blobs. Cosine similarity scoring happens in application code after loading all embeddings — SQLite has no built-in vector operations.
+
+</How>
+
+<Why>
+
+**Kind label.** The `kind` field lets the agent organize memories into categories (facts, preferences, reminders, goals) and lets `format_user_traits` render them grouped by category in system prompts.
+
+**Lazy FTS5 table creation.** `memory_search` is created with `CREATE VIRTUAL TABLE IF NOT EXISTS` inside `search()` rather than in `bootstrap()`. This keeps backward compatibility with databases that existed before the FTS index was introduced and avoids bootstrapping it for installs that never use memory search.
+
+**Blob-based embeddings.** Storing embeddings as raw binary avoids a dependency on a vector database. The tradeoff is that all embeddings must be loaded into memory for similarity search — acceptable at the scale Genesis targets (thousands of memories, not millions).
+
+</Why>

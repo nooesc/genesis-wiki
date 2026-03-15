@@ -1,14 +1,81 @@
 ---
 title: "genesis subagents"
-description: "Subagent inspection"
+description: "Inspect spawned subagents"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="subagents" usage="genesis subagents <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis subagents`?
+
+The `subagents` command lets you inspect the subagents that Eve has spawned during complex, multi-step tasks. When Eve encounters work that benefits from parallelism or delegation — such as running independent research threads or isolating risky operations — it can spin up child agents. These are called subagents.
+
+Each subagent is tied to a parent session and has its own ID, tool calls, and outcome. The `subagents` command gives you visibility into this hierarchy: you can list all subagents that ran within a parent session, or drill into the details of a specific subagent to see what it did.
+
+This is primarily a debugging and inspection tool. If a complex task produced an unexpected result, checking the subagent tree is often the first place to look.
 
 </What>
+
+<How>
+
+## Sub-commands
+
+| Sub-command | Description |
+|-------------|-------------|
+| `list <SESSION_ID>` | List all subagents spawned within a parent session |
+| `show <ID>` | Show full details for a specific subagent by its ID |
+
+## Options
+
+### `genesis subagents list <SESSION_ID>`
+
+| Argument | Description |
+|----------|-------------|
+| `SESSION_ID` | The parent session ID to query |
+
+### `genesis subagents show <ID>`
+
+| Argument | Description |
+|----------|-------------|
+| `ID` | The subagent ID to display |
+
+## Examples
+
+**List all subagents for a session:**
+```bash
+genesis subagents list chat-1712345678-1
+```
+
+**Show details for a specific subagent:**
+```bash
+genesis subagents show subagent-abc123
+```
+
+**Use with `--json` for machine-readable output:**
+```bash
+genesis --json subagents list chat-1712345678-1
+```
+
+</How>
+
+<Why>
+
+## Why a Separate Subagents Command?
+
+Subagents are stored in the same SQLite database as sessions but have a distinct identity. They are created by the `subagent` builtin tool during agent execution and linked to their parent session via a foreign key. The `subagents` command surfaces this relationship directly without requiring you to dig through raw session message history.
+
+The `list` sub-command queries `SubagentStore` filtered by parent session ID. The `show` sub-command looks up a single record by subagent ID and prints its prompt, tool calls, model, outcome, and timestamps. Both commands respect the global `--json` flag for scripting.
+
+Subagent inspection is particularly useful when running `genesis batch` or complex `genesis run` tasks, where multiple child agents may execute concurrently and their individual outcomes determine the overall result.
+
+</Why>
+
+</CliCommand>

@@ -8,6 +8,110 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+Every function that can fail in Genesis returns a `Result<T, SomeError>` — never an `Option` with hidden failure information, and never a panic. Error types are defined with the `thiserror` crate, which generates `Display` and `Error` trait implementations from annotations on the enum variants. Think of it like structured error messages: each failure mode gets its own named variant with its own human-readable template, so callers know exactly what went wrong and can handle specific cases without parsing a string.
+
+The rule is simple: if it can fail, return `Result`. If a `None` genuinely means "not found" (not an error), return `Option`. Never call `.unwrap()` or `.expect()` in production code paths.
 
 </What>
+
+<How>
+
+### Defining an error type
+
+Each crate defines its own error enum in the same file where it is used, annotated with `#[derive(Debug, Error)]` from `thiserror`:
+
+```rust
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum StorageError {
+    #[error("failed to create storage directory for {path}: {source}")]
+    CreateDirectory {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("database error: {0}")]
+    Database(#[from] rusqlite::Error),
+
+    #[error("session not found: {0}")]
+    NotFound(String),
+}
+```
+
+Key annotations:
+
+| Annotation | Effect |
+|---|---|
+| `#[error("...")]` | Sets the `Display` message. `{field}` interpolates named fields; `{0}` interpolates tuple fields. |
+| `#[from]` | Implements `From<SourceType>` so `?` auto-converts the error. |
+| `#[source]` | Marks the underlying error for `Error::source()` / backtrace chains without auto-converting. |
+
+### Using errors in functions
+
+```rust
+pub fn load_session(id: &str) -> Result<Session, StorageError> {
+    let row = db.query_row(SQL, [id], mapper)
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => StorageError::NotFound(id.to_owned()),
+            other => StorageError::Database(other),
+        })?;
+    Ok(row)
+}
+```
+
+For errors that implement `#[from]`, use `?` directly:
+
+```rust
+pub fn write_file(path: &Path, content: &str) -> Result<(), std::io::Error> {
+    std::fs::write(path, content)?;   // ? converts io::Error automatically
+    Ok(())
+}
+```
+
+### Cross-crate error propagation
+
+CLI errors collect errors from multiple crates using `#[from]`:
+
+```rust
+#[derive(Debug, Error)]
+pub enum CliError {
+    #[error(transparent)]
+    Config(#[from] genesis_config::ConfigError),
+    #[error(transparent)]
+    Storage(#[from] genesis_storage::StorageError),
+    #[error(transparent)]
+    Core(#[from] genesis_core::CoreError),
+    #[error("{0}")]
+    Other(String),
+}
+```
+
+`#[error(transparent)]` delegates `Display` to the wrapped error, preserving the original message all the way up to the user.
+
+### No unwrap in production
+
+```rust
+// BAD — panics if the mutex is poisoned
+let guard = MY_MUTEX.lock().unwrap();
+
+// GOOD — propagate the error
+let guard = MY_MUTEX.lock().map_err(|_| MyError::LockPoisoned)?;
+```
+
+The exception is test code, where `.unwrap()` and `.expect("descriptive message")` are acceptable because a panic immediately fails the test with a clear location.
+
+</How>
+
+<Why>
+
+`thiserror` is a pure derive macro — it generates no runtime code beyond what you would write manually. The resulting types are `Send + Sync` and implement `std::error::Error`, which means they work with any logging framework or error reporter.
+
+Centralising error types per crate (rather than using a global `Box<dyn Error>`) makes it possible to match on specific variants in callers that need to recover from particular failures. For example, the agent loop distinguishes `ProviderError::RateLimit` (which triggers a backoff-and-retry) from `ProviderError::AuthError` (which aborts the session) — a stringly-typed approach would require fragile string matching.
+
+The `#[error(transparent)]` pattern used in `CliError` is intentional: the outermost crate (`genesis-cli`) does not add its own message to errors that already have good messages. This keeps the user-visible error text short and avoids double-wrapping like "CLI error: config error: file not found".
+
+`no_std` compatibility is not a goal for this project — all crates target the standard library — so there is no pressure to avoid heap allocations in error paths.
+
+</Why>

@@ -1,14 +1,106 @@
 ---
 title: "Signal"
-description: "Signal integration (requires signal-cli daemon)"
+description: "Signal integration via signal-cli daemon"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/platforms/signal.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Signal Platform?
+
+The Signal platform connects Eve to Signal messenger via the [signal-cli](https://github.com/AsamK/signal-cli) daemon running in HTTP mode. Unlike cloud-API platforms, Signal has no official bot API — signal-cli acts as a local proxy, managing Signal protocol registration and message delivery on behalf of a registered phone number.
+
+Eve communicates with signal-cli using JSON-RPC 2.0 over HTTP (`POST /api/v1/rpc`), calling the `send`, `startTyping`, and `stopTyping` methods.
+
+Two delivery modes are supported:
+
+- **Webhook mode** (`POST /signal/webhook`): signal-cli (or a polling proxy) pushes a `SignalEnvelope` JSON body to Genesis when a message arrives.
+- **Poll mode** (`POST /signal/poll`): Genesis proactively fetches pending messages from signal-cli's `GET /v1/receive/{account}` endpoint. Useful when signal-cli does not push webhooks.
+
+Both DMs and group chats are supported. Group messages use the base64-encoded group ID as the session key. For group chats, an optional allowlist (`SIGNAL_GROUP_ALLOWED_USERS`) restricts which senders the agent responds to. DMs use standard pairing flow.
+
+Typing indicators are sent automatically: `startTyping` is dispatched before the agent runs and `stopTyping` after the reply is sent.
 
 </What>
+
+<How>
+
+## Setup
+
+1. Install and register signal-cli with your phone number.
+2. Start signal-cli in daemon/HTTP mode: `signal-cli -u +15551234567 daemon --http`.
+3. Set the environment variables:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `SIGNAL_ACCOUNT` | Yes | — | Registered phone number (e.g. `+15551234567`) |
+| `SIGNAL_HTTP_URL` | No | `http://127.0.0.1:8080` | signal-cli daemon URL |
+| `SIGNAL_WEBHOOK_SECRET` | No | — | When set, requires `X-Signal-Secret` header on webhook requests |
+| `SIGNAL_GROUP_ALLOWED_USERS` | No | — | Comma-separated phone numbers allowed in group chats |
+
+## Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/signal/webhook` | POST | Receives pushed `SignalEnvelope` from signal-cli |
+| `/signal/poll` | POST | One-shot fetch from signal-cli receive endpoint |
+
+## Envelope Structure
+
+signal-cli sends (or returns) envelopes with this shape:
+
+```json
+{
+  "source_number": "+15551234567",
+  "source_name": "Alice",
+  "dataMessage": {
+    "timestamp": 1700000000000,
+    "message": "Hello Eve",
+    "groupInfo": { "groupId": "abc123==" },
+    "attachments": [{ "contentType": "image/png", "filename": "photo.png", "size": 102400 }],
+    "quote": { "id": 1700000000000, "author": "+15559876543", "text": "quoted text" }
+  }
+}
+```
+
+The `source` alias is also accepted for `source_number` (older signal-cli versions).
+
+## Message Limits
+
+Signal supports up to 8000 bytes per message. Genesis uses a conservative limit of 6000 characters, splitting on newline or word boundaries with char-boundary-safe UTF-8 indexing.
+
+## Outbound RPC
+
+All outbound calls use JSON-RPC 2.0:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "send",
+  "id": "<nanosecond-timestamp-hex>",
+  "params": { "account": "+15551234567", "recipients": ["+15559876543"], "message": "Hello" }
+}
+```
+
+Group sends use `"groupId"` instead of `"recipients"`.
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**signal-cli dependency.** Signal has no public bot API. The only reliable option for automating Signal is signal-cli, which implements the Signal protocol. The daemon/HTTP mode decouples signal-cli's lifecycle from Genesis and allows running them as separate services.
+
+**Dual delivery modes.** Not all signal-cli deployments are configured to push webhooks. The poll endpoint lets Genesis pull messages on demand (e.g., from a cron job) without requiring signal-cli push configuration.
+
+**Group allowlist.** Signal groups have no bot-signup mechanic. The `SIGNAL_GROUP_ALLOWED_USERS` allowlist lets operators gate group access to known phone numbers. An empty allowlist means open access, which is appropriate for personal deployments where all group members are trusted.
+
+**Typing indicators.** Signal users expect typing indicators from human contacts. Sending `startTyping` before the agent runs and `stopTyping` after the reply preserves this social signal, making the bot feel more natural.
+
+</Why>

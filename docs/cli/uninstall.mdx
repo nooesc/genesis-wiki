@@ -1,14 +1,73 @@
 ---
 title: "genesis uninstall"
-description: "Uninstall Genesis"
+description: "Remove Genesis binary, data, and config files"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="uninstall" usage="genesis uninstall [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis uninstall`?
+
+The `uninstall` command removes Genesis from your system. By default it removes the binary. Optionally it can also remove the data directory (which contains the SQLite database, saved trajectories, and similar files) and the config directory (which contains `config.yaml`, auth tokens, and other configuration).
+
+Without `--force`, it prompts for confirmation before deleting anything. With `--force`, it removes everything selected without prompting — useful in automated teardown scripts.
 
 </What>
+
+<How>
+
+## Options
+
+| Flag | Description |
+|------|-------------|
+| `--remove-data` | Also remove the data directory (`~/.genesis/data/` or configured path) |
+| `--remove-config` | Also remove the config directory (`~/.genesis/`) |
+| `--force` | Remove everything without prompting for confirmation |
+
+## Examples
+
+**Remove only the binary (prompts for confirmation):**
+```bash
+genesis uninstall
+```
+
+**Remove the binary and all data:**
+```bash
+genesis uninstall --remove-data
+```
+
+**Complete removal of everything:**
+```bash
+genesis uninstall --remove-data --remove-config
+```
+
+**Non-interactive complete removal:**
+```bash
+genesis uninstall --remove-data --remove-config --force
+```
+
+</How>
+
+<Why>
+
+## Staged Deletion Design
+
+The three-flag design (binary, data, config as separate opt-ins) reflects that different users want different things from "uninstall":
+
+- A user who wants to reinstall fresh may want to remove the binary but keep their session history and configuration.
+- A user switching to a different machine may want to export their data before deleting it.
+- A user doing a complete cleanup wants everything gone.
+
+Keeping `--remove-data` and `--remove-config` as explicit opt-ins prevents accidental data loss — the most common mistake in uninstall flows is blowing away years of conversation history. The `--force` flag exists for scripted environments where interactive confirmation is not possible.
+
+</Why>
+
+</CliCommand>

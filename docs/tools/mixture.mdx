@@ -1,16 +1,109 @@
 ---
-title: "Mixture"
-description: "Mixture of Agents"
+title: "Mixture of Agents"
+description: "Query multiple LLMs in parallel and synthesize their responses for higher-quality answers"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/mixture.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="mixture_of_agents" module="builtins/mixture.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Implements the Mixture of Agents (MoA) pattern: sends the same prompt to multiple LLMs simultaneously, collects all responses, and optionally synthesizes them into a single high-quality answer using a designated synthesis model.
+
+This is useful for tasks where no single model is reliably best — code reviews, factual verification, creative generation, or complex reasoning. By querying several models in parallel and merging their perspectives, the composite answer tends to be more accurate and complete than any individual response.
+
+Models are queried using background threads (up to 5 in parallel). Errors from individual models are captured and displayed inline without failing the entire tool call — if 3 out of 4 models succeed, you still get 3 responses.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `prompt` | `string` | Yes | — | The question or task to send to all models |
+| `models` | `string` | No | `openai/gpt-4o, openai/gpt-4o-mini, anthropic/claude-sonnet-4-20250514` | Comma-separated list of `backend/model` specs (max 5) |
+| `system` | `string` | No | — | Optional system prompt applied to all model queries |
+| `synthesize` | `string` | No | `"true"` | Set to `"false"` to skip synthesis and return raw responses only |
+| `synthesis_model` | `string` | No | `"gpt-4o"` | Model to use for the synthesis step |
+| `synthesis_backend` | `string` | No | `"openai"` | Backend for the synthesis model |
+
+### Model Spec Format
+
+Models are specified as `backend/model` strings. If no `/` is present, `openai` is assumed as the backend.
+
+```
+openai/gpt-4o
+anthropic/claude-opus-4-5
+openrouter/meta-llama/llama-3.3-70b-instruct
+deepseek-chat        ← treated as openai/deepseek-chat
+```
+
+## Example: Code review with synthesis
+
+```json
+{
+  "name": "mixture_of_agents",
+  "arguments": {
+    "prompt": "Review this Rust function for correctness, edge cases, and performance:\n\n```rust\nfn median(mut nums: Vec<f64>) -> f64 {\n    nums.sort_by(|a, b| a.partial_cmp(b).unwrap());\n    let n = nums.len();\n    if n % 2 == 0 { (nums[n/2 - 1] + nums[n/2]) / 2.0 } else { nums[n/2] }\n}\n```",
+    "models": "openai/gpt-4o, anthropic/claude-opus-4-5",
+    "synthesize": "true"
+  }
+}
+```
+
+**Response (abbreviated):**
+```
+Queried 2 models:
+
+### openai/gpt-4o
+The function is correct for typical inputs. Edge case: empty Vec will panic at `nums[n/2]`
+when n=0. The `unwrap()` on `partial_cmp` will also panic on NaN inputs...
+
+### anthropic/claude-opus-4-5
+Correct implementation with one significant concern: no handling for empty input...
+
+---
+## Synthesized Answer
+Both models agree the function is correct for well-formed inputs but will panic on:
+1. Empty vector (index out of bounds)
+2. NaN values (unwrap on None from partial_cmp)
+
+Recommended fix: add an `assert!(!nums.is_empty())` or return `Option<f64>`, and use
+`total_cmp` instead of `partial_cmp` if NaN inputs are possible...
+```
+
+## Example: Raw responses only (no synthesis)
+
+```json
+{
+  "name": "mixture_of_agents",
+  "arguments": {
+    "prompt": "What are the main trade-offs between PostgreSQL and MySQL for a new SaaS application?",
+    "synthesize": "false"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+**Parallel execution with `std::thread::scope`:** Because `ToolHandler::run` is synchronous, all model queries are dispatched on threads within a scoped thread pool. `block_in_place` is used inside each thread to bridge the async `ChatClient::complete` call with the blocking thread context. The scoped join ensures all threads complete before the tool returns, even if some fail.
+
+**Synthesis prompt design:** The synthesizer receives a structured prompt that lists each model's label (`backend/model`) alongside its response, then asks it to "synthesize into a single, comprehensive answer, highlight areas of agreement, and resolve contradictions." The synthesizer's system prompt explicitly identifies it as a "synthesis agent" to prevent it from adding meta-commentary about the synthesis task.
+
+**Default models:** The three default models (`gpt-4o`, `gpt-4o-mini`, `claude-sonnet-4-20250514`) were chosen to provide diversity across providers (OpenAI and Anthropic) and capability tiers (frontier and fast) while remaining broadly available. Override with `models` if you need specific models for your use case.
+
+**Failure tolerance:** Individual model errors are captured as `Err(String)` in the results vector. Failed models are displayed as `[Error: ...]` inline. The synthesis step only runs if there are at least 2 successful responses; with fewer than 2, synthesis is skipped regardless of the `synthesize` flag.
+
+</Why>
+
+</ToolRef>

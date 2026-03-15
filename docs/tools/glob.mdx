@@ -4,13 +4,68 @@ description: "File pattern matching"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/glob.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="glob_search" module="builtins/glob.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does glob_search Do?
+
+`glob_search` finds files and directories matching a glob pattern. It supports standard glob syntax including `*` (any characters within a path segment), `**` (any number of path segments), and `?` (any single character). Results are sorted alphabetically and capped at 100 entries by default.
+
+Hidden files (names starting with `.`) and well-known noise directories (`node_modules`, `target`, `.git`, etc.) are automatically skipped to avoid polluting results with irrelevant paths.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `pattern` | `string` | Yes | -- | Glob pattern, e.g. `**/*.rs` or `src/*.ts` |
+| `path` | `string` | No | `.` | Base directory to search within |
+| `type` | `string` | No | `"any"` | Filter by entry type: `"file"`, `"dir"`, or `"any"` |
+| `limit` | `string` | No | `"100"` | Maximum number of results to return |
+
+## Example
+
+```json
+{
+  "name": "glob_search",
+  "arguments": {
+    "pattern": "**/*.rs",
+    "path": "/home/user/my-project",
+    "type": "file",
+    "limit": "50"
+  }
+}
+```
+
+**Response:**
+```
+/home/user/my-project/src/lib.rs
+/home/user/my-project/src/main.rs
+/home/user/my-project/tests/integration.rs
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The tool uses the `glob` crate. When `path` is `.`, the pattern is prefixed with `./` to anchor it correctly. When `path` is an absolute path, the pattern is prepended with the base path unless the pattern is already absolute or already starts with the base path.
+
+The `should_skip` function computes the relative portion of each matched path (stripping the base prefix) before checking for hidden components or noise directories. This prevents false positives when the base directory itself lives inside a dotted path such as `/var/.tmp/session`.
+
+Results are sorted after collection, and `truncate(limit)` is applied after sorting for deterministic output.
+
+</Why>
+
+</ToolRef>

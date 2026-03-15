@@ -2,13 +2,87 @@
 title: "Slack"
 description: "Slack bot integration"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/platforms/slack.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Slack Platform?
+
+The Slack platform connects Eve to Slack workspaces via the Slack Events API. Once configured, Eve responds to two types of events: direct messages (`message.im`) and app mentions (`app_mention`). When a user sends a DM or @-mentions the bot in a channel, the event is received as a webhook, the message is processed through the agent, and the reply is posted back using `chat.postMessage`.
+
+Bot messages are automatically ignored to prevent the agent from responding to its own replies (loop prevention via the `bot_id` field).
+
+Each Slack channel has a stable session ID (`slack-{channel_id}`), so conversation history persists. Thread continuity is preserved: replies are posted with the original message's `ts` (timestamp) as the `thread_ts`, keeping the conversation threaded in Slack.
+
+During initial setup, Slack sends a `url_verification` challenge. The handler responds with the challenge string to complete verification.
+
+DM pairing is required: the first message from an unknown Slack user ID triggers a pairing code flow.
 
 </What>
+
+<How>
+
+## Setup
+
+1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps).
+2. Enable Event Subscriptions and set the Request URL to `https://your-server/slack/events`.
+3. Subscribe to `message.im` (DM messages) and `app_mention` events.
+4. Install the app to your workspace.
+5. Set the environment variables:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SLACK_BOT_TOKEN` | Yes | Bot OAuth token (`xoxb-...`) for posting messages |
+| `SLACK_SIGNING_SECRET` | Yes | For HMAC-SHA256 request signature verification |
+
+## Webhook Endpoint
+
+```
+POST /slack/events
+Header: X-Slack-Signature: v0=<hmac>
+Header: X-Slack-Request-Timestamp: <unix_timestamp>
+```
+
+The handler verifies the HMAC-SHA256 signature using `SLACK_SIGNING_SECRET`. The signature covers `v0:{timestamp}:{body}`.
+
+## URL Verification
+
+When Slack first pings the endpoint during app setup, it sends:
+
+```json
+{ "type": "url_verification", "challenge": "abc123" }
+```
+
+The handler responds with `{ "challenge": "abc123" }` immediately.
+
+## Supported Event Types
+
+| Event | Trigger |
+|-------|---------|
+| `message` | Any message in a DM channel |
+| `app_mention` | Any message that @-mentions the bot |
+
+Messages with a `bot_id` field are ignored entirely to prevent response loops.
+
+## Message Posting
+
+Replies are posted via `POST https://slack.com/api/chat.postMessage` with Bearer authentication using `SLACK_BOT_TOKEN`. The `thread_ts` field is set to the triggering message's timestamp to keep conversations threaded.
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Bot message filtering.** Without filtering on `bot_id`, the agent would see its own replies as new events and respond to them indefinitely. Checking for the `bot_id` field in the event payload is the simplest and most reliable way to break this loop.
+
+**Thread-based replies.** Posting replies with `thread_ts` maintains Slack's threading model. This keeps bot conversations visually distinct from channel-level discussion, which is the expected behavior for Slack bots.
+
+**HMAC-SHA256 verification.** Slack uses HMAC over `v0:{timestamp}:{body}` rather than a static token, which provides replay protection (the timestamp is validated within a 5-minute window by Slack's spec). This is more robust than static secret tokens.
+
+</Why>

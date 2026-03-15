@@ -1,14 +1,99 @@
 ---
 title: "Training Pipeline"
-description: "Trajectory, quality, compression, tagging"
+description: "Trajectory recording, quality scoring, auto-tagging, and dataset export"
 crate: genesis-core
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-core/src/trajectory.rs
+  - crates/genesis-core/src/quality.rs
+  - crates/genesis-core/src/tagger.rs
+  - crates/genesis-core/src/dataset.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Training Pipeline?
+
+The training pipeline is a set of components that turn Genesis agent sessions into high-quality training data for fine-tuning language models. It has four stages:
+
+1. **Trajectory recording** — `TrajectoryRecorder` captures every step of an agent session (user messages, assistant messages, tool calls, tool results) into a structured `Trajectory` object with timestamps, token usage, and outcome.
+
+2. **Quality scoring** — `score()` evaluates a trajectory across 6 dimensions and produces a composite score from 0.0 to 1.0. Low-quality trajectories can be filtered before inclusion in training sets.
+
+3. **Auto-tagging** — `auto_tag()` analyzes a trajectory's tool usage, outcome, depth, and content to assign semantic tags (`file-ops`, `shell`, `git`, `web-research`, `multi-step`, etc.).
+
+4. **Dataset export** — The `dataset` module exports filtered, optionally compressed trajectory collections in ChatML or ShareGPT format for use with standard fine-tuning pipelines.
 
 </What>
+
+<How>
+
+## Quality Dimensions
+
+Quality scoring uses 6 dimensions, each scored 0.0 to 1.0, combined with configurable weights:
+
+| Dimension | Weight | Description |
+|-----------|--------|-------------|
+| `outcome` | 0.25 | Did the trajectory succeed? (`TrajectoryOutcome::Success` = 1.0, `Failure` = 0.0, `Abandoned` = 0.3) |
+| `signal_to_noise` | 0.20 | Ratio of useful content vs. errors and retries |
+| `tool_diversity` | 0.10 | Number of distinct tools used (more diverse = higher score) |
+| `depth` | 0.15 | Multi-turn trajectories score higher than single-turn |
+| `efficiency` | 0.15 | Fewer wasted turns (consecutive errors, repeated retries) scores higher |
+| `completeness` | 0.15 | Has all expected parts: user message, assistant response, outcome |
+
+```bash
+# Filter and export only high-quality trajectories
+genesis eval export-chatml \
+  --quality-filter 0.7 \
+  --auto-tag \
+  --output dataset.jsonl
+```
+
+## Auto-Tags Applied
+
+| Tag | Trigger |
+|-----|---------|
+| `file-ops` | Used `read_file`, `write_file`, `patch`, `list_dir`, or `list_tree` |
+| `shell` | Used `shell_exec` |
+| `git` | Used any `git_*` tool |
+| `web-research` | Used `web_search`, `web_request`, or `browse` |
+| `code-search` | Used `glob_search` or `search_files` |
+| `memory` | Used `memory_store` or `memory_recall` |
+| `multi-step` | 5+ tool calls |
+| `deep-conversation` | 10+ turns |
+| `success` | `TrajectoryOutcome::Success` |
+| `failure` | `TrajectoryOutcome::Failure` |
+| `no-tools` | No tool calls made |
+
+## Trajectory Compression
+
+`TrajectoryCompressor` reduces a trajectory's middle steps for training, preserving the first and last turns (edges) which carry the most signal. Intermediate steps are collapsed to reduce dataset size while maintaining semantic completeness.
+
+## CLI Commands
+
+```bash
+genesis eval stats            # Trajectory statistics
+genesis eval quality          # Quality score distribution
+genesis eval auto-tag         # Tag all trajectories in the store
+genesis eval tag-stats        # Tag frequency report
+genesis eval deduplicate      # Remove near-duplicate trajectories
+genesis eval filter --min-quality 0.7 --tags shell,git
+genesis eval split --train 0.8 --val 0.1 --test 0.1
+genesis eval merge a.jsonl b.jsonl > merged.jsonl
+```
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**6-dimension quality scoring.** A single score is easy to filter on, but a single dimension (e.g., only outcome) would accept low-effort successful trajectories or reject high-quality failed attempts where the agent tried hard. Six dimensions capture orthogonal quality signals. The weights can be customized for different training objectives.
+
+**Outcome as the highest-weighted dimension.** Successful completions (weight 0.25) are the most important signal for training. However, high-quality failure trajectories (high efficiency + signal-to-noise, `Failure` outcome) are still included at a lower score, which is useful for training models to recognize and recover from errors.
+
+**Auto-tagging for dataset composition.** Training datasets benefit from semantic stratification — too many `shell` examples and not enough `web-research` will bias the fine-tuned model. Auto-tags make it straightforward to analyze and balance dataset composition before export.
+
+</Why>

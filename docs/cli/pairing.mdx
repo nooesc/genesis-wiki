@@ -1,14 +1,111 @@
 ---
 title: "genesis pairing"
-description: "DM pairing authorization"
+description: "Manage DM pairing authorization for messaging platforms"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-gateway/src/pairing.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="pairing" usage="genesis pairing <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis pairing`?
+
+The `pairing` command manages the DM pairing authorization system that controls who can talk to Eve on messaging platforms (Telegram, Discord, Slack, WhatsApp). When a new user sends Eve a direct message on a supported platform, they receive a pairing code. That code must be approved by a Genesis administrator — either via the `genesis pairing approve` command or the HTTP API — before the user's messages are processed.
+
+This gating mechanism prevents unauthorized access to your Eve instance. The `pairing` command lets you see who is approved, review pending requests, approve or revoke users, and clean up stale pending codes.
 
 </What>
+
+<How>
+
+## Sub-commands
+
+| Sub-command | Description |
+|-------------|-------------|
+| `list [--platform]` | List approved (paired) users |
+| `pending [--platform]` | List pending pairing requests |
+| `approve <PLATFORM> <CODE>` | Approve a pairing code |
+| `revoke <PLATFORM> <USER_ID>` | Revoke an approved user's access |
+| `clear-pending [--platform]` | Clear all pending pairing codes |
+
+## Options
+
+### `genesis pairing list`
+
+| Flag | Description |
+|------|-------------|
+| `--platform <NAME>` | Filter by platform: `telegram`, `discord`, `slack`, `whatsapp` |
+
+### `genesis pairing pending`
+
+| Flag | Description |
+|------|-------------|
+| `--platform <NAME>` | Filter by platform |
+
+### `genesis pairing approve <PLATFORM> <CODE>`
+
+| Argument | Description |
+|----------|-------------|
+| `PLATFORM` | Platform name (`telegram`, `discord`, `slack`, `whatsapp`) |
+| `CODE` | The pairing code to approve |
+
+### `genesis pairing revoke <PLATFORM> <USER_ID>`
+
+| Argument | Description |
+|----------|-------------|
+| `PLATFORM` | Platform name |
+| `USER_ID` | The platform user ID to revoke |
+
+### `genesis pairing clear-pending`
+
+| Flag | Description |
+|------|-------------|
+| `--platform <NAME>` | Only clear pending codes for this platform (clears all if omitted) |
+
+## Examples
+
+**See who is approved on Telegram:**
+```bash
+genesis pairing list --platform telegram
+```
+
+**Check pending requests:**
+```bash
+genesis pairing pending
+```
+
+**Approve a code:**
+```bash
+genesis pairing approve telegram ABC123
+```
+
+**Revoke a user:**
+```bash
+genesis pairing revoke discord 123456789012345678
+```
+
+**Clear all stale pending codes:**
+```bash
+genesis pairing clear-pending
+```
+
+</How>
+
+<Why>
+
+## Why Code-Based Pairing?
+
+Messaging platforms do not provide a reliable way for Eve to verify that a new DM sender is authorized. The pairing system solves this with an out-of-band approval step: the user receives a short code in the DM, then an administrator approves it through the CLI or API. This creates an explicit authorization record in the SQLite `pairing` table without requiring the user to share credentials.
+
+Once a user is approved, their platform user ID is stored in the database and checked on every subsequent message. The `revoke` sub-command removes that record immediately, cutting off access without any platform-side action required. The `clear-pending` sub-command is useful for cleaning up expired or spam pairing attempts without needing to revoke each code individually.
+
+</Why>
+
+</CliCommand>

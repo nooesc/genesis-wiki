@@ -1,16 +1,89 @@
 ---
 title: "Web"
-description: "Web content fetching"
+description: "Raw HTTP request tool"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/web.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="web_request" module="builtins/web.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does web_request Do?
+
+`web_request` makes an HTTP request to a URL and returns the status code, selected response headers, and body. It supports GET, POST, PUT, DELETE, PATCH, and HEAD methods. Custom headers can be passed as a JSON object. When a body is provided, it defaults to `Content-Type: application/json` unless the `headers` parameter already includes a content type.
+
+The tool has SSRF protection: it blocks requests to localhost, private IP ranges (10.x, 172.16.x, 192.168.x, 169.254.x), loopback addresses, and non-HTTP schemes like `file://`. Responses are truncated at 128 KiB.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `url` | `string` | Yes | -- | The URL to request |
+| `method` | `string` | No | `"GET"` | HTTP method: GET, POST, PUT, DELETE, PATCH, or HEAD |
+| `body` | `string` | No | -- | Request body (typically JSON) |
+| `headers` | `string` | No | -- | JSON object of custom headers, e.g. `{"Authorization": "Bearer token"}` |
+
+## Example: GET request
+
+```json
+{
+  "name": "web_request",
+  "arguments": {
+    "url": "https://api.example.com/users/42"
+  }
+}
+```
+
+**Response:**
+```
+HTTP 200
+content-type: application/json
+
+{"id": 42, "name": "Alice"}
+```
+
+## Example: POST with body
+
+```json
+{
+  "name": "web_request",
+  "arguments": {
+    "url": "https://api.example.com/messages",
+    "method": "POST",
+    "body": "{\"text\": \"hello\"}",
+    "headers": "{\"Authorization\": \"Bearer abc123\"}"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## SSRF Protection
+
+The `validate_url` function in `url_safety` checks the URL before any network call is made. It blocks:
+- `localhost` and `127.x.x.x`
+- RFC 1918 private ranges (10.x, 172.16–31.x, 192.168.x)
+- Link-local addresses (169.254.x, used by cloud metadata services)
+- Non-HTTP/HTTPS schemes (`file://`, `ftp://`, etc.)
+
+This prevents the agent from being used to probe internal network services, read local files via the file scheme, or access cloud instance metadata endpoints.
+
+## Response Headers
+
+Only four header names are forwarded in the response: `content-type`, `content-length`, `location`, and `server`. This keeps the output compact while preserving the headers most useful for understanding the response.
+
+</Why>
+
+</ToolRef>

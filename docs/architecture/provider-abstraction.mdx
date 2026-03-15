@@ -4,13 +4,130 @@ description: "OpenAI format as lingua franca"
 crate: genesis-provider
 source_files:
   - crates/genesis-provider/src/client.rs
-last_synced_commit: "0000000"
+  - crates/genesis-provider/src/api_types.rs
+  - crates/genesis-provider/src/resolve.rs
+  - crates/genesis-provider/src/anthropic_types.rs
+  - crates/genesis-provider/src/gemini_types.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Provider Abstraction?
+
+Every AI provider — OpenAI, Anthropic, Google Gemini, OpenRouter, local vLLM, Ollama — has its own HTTP API with its own request structure, authentication method, and response format. Without an abstraction layer, the rest of Genesis would need to understand all of them, and adding a new provider would mean touching the agent loop, the execution service, and the CLI.
+
+The provider abstraction solves this by picking one format — OpenAI's Chat Completions API — and treating it as the universal language. Every other crate in Genesis speaks this format exclusively. When Eve needs to talk to Anthropic Claude, the provider layer silently translates the outgoing request from OpenAI format to Anthropic's native Messages format, sends it, receives the Anthropic response, and translates it back to OpenAI format before handing it up. The agent loop never sees a single Anthropic-specific type.
+
+Think of it like a universal power adapter. Your laptop speaks one plug format. The adapter transparently converts it to whatever the wall socket expects. You never think about the wall socket's internals — you just plug in and get power.
+
+The single `ChatClient` struct handles all five provider backends (OpenAI, Anthropic, Gemini, OpenRouter, and OpenAI-compatible locals) with zero changes to callers.
 
 </What>
+
+<How>
+
+## Building a Client
+
+```rust
+// From config (resolves credentials from environment automatically)
+let client = client_from_config(
+    "anthropic",                      // backend name
+    "claude-sonnet-4-20250514",       // model
+    None,                             // base_url override (None = use default)
+    None,                             // api_key_env override (None = use ANTHROPIC_API_KEY)
+).await?;
+
+// From a resolved provider directly
+let provider = ResolvedProvider {
+    backend: "openrouter".to_owned(),
+    base_url: "https://openrouter.ai/api/v1".to_owned(),
+    api_key: std::env::var("OPENROUTER_API_KEY").unwrap_or_default(),
+    model: "moonshotai/kimi-k2".to_owned(),
+};
+let client = ChatClient::new(&provider)?;
+```
+
+## Supported Backends and Their Resolution
+
+| Backend name | Default base URL | Auth method | API key env var |
+|---|---|---|---|
+| `openai` | `https://api.openai.com/v1` | `Authorization: Bearer` | `OPENAI_API_KEY` |
+| `anthropic` | `https://api.anthropic.com/v1` | `x-api-key` header | `ANTHROPIC_API_KEY` |
+| `gemini` / `google` | `https://generativelanguage.googleapis.com/v1beta` | URL query param `?key=` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
+| `openrouter` | `https://openrouter.ai/api/v1` | `Authorization: Bearer` | `OPENROUTER_API_KEY` |
+| `openai-codex` | Codex inference URL | OAuth token or `Authorization: Bearer` | Auth store → env var |
+| `local` / anything else | `https://api.openai.com/v1` | `Authorization: Bearer` | `OPENAI_API_KEY` |
+
+For local providers (Ollama, vLLM), pass `base_url = Some("http://localhost:11434/v1")` and the client routes requests to that endpoint instead.
+
+## The Core Request Types (`api_types.rs`)
+
+All outgoing requests use `ChatCompletionRequest`:
+
+```rust
+pub struct ChatCompletionRequest {
+    pub model: String,
+    pub messages: Vec<ChatMessage>,      // conversation history
+    pub tools: Vec<ChatTool>,            // tool definitions (JSON Schema)
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+    pub stream: Option<bool>,
+    pub response_format: Option<ResponseFormat>,  // text | json_object | json_schema
+    pub tool_choice: Option<ToolChoice>,  // none | auto | required | Function(name)
+    pub thinking: Option<ThinkingConfig>, // extended reasoning budget
+    pub extra_body: Option<serde_json::Value>,  // pass-through for OpenRouter features
+}
+```
+
+`MessageContent` can be plain text or multimodal (text + image parts), serializing as a JSON string for text-only and as a JSON array for multimodal — matching what both OpenAI and Anthropic expect.
+
+## Translation Layers
+
+For Anthropic, `anthropic_types::to_anthropic_request()` converts `ChatCompletionRequest` → `AnthropicRequest` (which uses `contents` blocks, a separate `systemInstruction`, and `tools` in Anthropic's function-declaration format). After the call, `anthropic_types::from_anthropic_response()` converts `AnthropicResponse` back to `ChatCompletionResponse`. The agent loop never sees either type.
+
+Gemini works the same way: `gemini_types::to_gemini_request()` and `gemini_types::from_gemini_response()` handle the full round-trip translation, including Gemini's `generateContent` endpoint URL that embeds the model name: `{base}/models/{model}:generateContent?key={api_key}`.
+
+## Retry and Error Handling
+
+All HTTP calls go through `send_with_retry`, which implements:
+
+- Up to 3 retry attempts with exponential backoff (1s → 2s → 4s, capped at 8s)
+- `Retry-After` header honoring for 429 rate-limit responses
+- Retryable statuses: 429, 500, 502, 503, 504
+- Non-retryable: 400, 401, 403, 404, etc.
+- Response size cap: 4 MiB for non-streaming responses
+
+## Prompt Caching
+
+For Anthropic and OpenRouter backends, `inject_cache_control` automatically adds `"cache_control": {"type": "ephemeral"}` to the last system message and the last tool result in the conversation. This triggers Anthropic's prompt caching, which can reduce costs by up to 90% for long conversations where the system prompt and tools don't change turn-to-turn.
+
+</How>
+
+<Why>
+
+## Why OpenAI Format as the Universal Language?
+
+OpenAI's Chat Completions API has become the de facto standard for LLM APIs. Most local inference servers (vLLM, Ollama, llama.cpp server, LM Studio) implement it natively. OpenRouter exposes it as a unified gateway to dozens of models. Using it as Genesis's internal language means that any OpenAI-compatible model works out of the box with zero code changes — just point `base_url` at it.
+
+The alternative would have been to define a custom internal protocol and translate every provider to it. This would have required the same amount of translation work but with an additional layer of types that no external tools understand. The OpenAI format as the internal language means Genesis's protocol is also its external protocol.
+
+## Why Translate at the HTTP Client Level?
+
+The translation between OpenAI format and Anthropic/Gemini native formats happens inside `ChatClient.complete()`, not in the agent loop or the execution service. This was a deliberate choice: the translation is an implementation detail of the HTTP client, not a concern of the business logic that calls it.
+
+Keeping the translation inside the client means callers can be written once and work across all providers without `if backend == "anthropic" { ... }` branches scattered through the codebase. It also means the translation logic is co-located with the HTTP call it supports, making it easy to find, test, and update when a provider changes their API.
+
+## Why a Warmup Connection?
+
+`client_from_config` spawns a background task to pre-establish the TCP+TLS connection to the provider's API immediately after the client is built. This runs concurrently with other initialization work (loading config, building the system prompt, registering tools). By the time the first real LLM request is made, the connection is almost always already established, eliminating the ~100–300ms TLS handshake latency from the user's first message.
+
+The warmup is skipped for local endpoints (`localhost`, `127.0.0.1`) where TLS doesn't apply, and for test builds to avoid firing real network requests in test suites.
+
+## The `extra_body` Escape Hatch
+
+`ChatCompletionRequest.extra_body` is a `serde_json::Value` that gets merged into the top-level request JSON before sending. This is how Genesis passes OpenRouter-specific parameters like `route: "fallback"`, `provider: { sort: "price" }`, or model routing allowlists without adding OpenRouter-specific fields to the core request type. Any provider-specific feature that doesn't fit the standard OpenAI schema can be threaded through `extra_body` without changing any types.
+
+</Why>

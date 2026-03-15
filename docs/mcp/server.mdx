@@ -1,16 +1,121 @@
 ---
 title: "MCP Server"
-description: "Exposing Genesis tools as MCP"
+description: "Expose all Genesis built-in tools to any MCP-compatible client"
 crate: genesis-mcp
 source_files:
   - crates/genesis-mcp/src/server.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Genesis MCP Server?
+
+Genesis can operate as an MCP server, exposing all of its 60+ built-in tools to any MCP-compatible client: Claude Desktop, VS Code extensions, Cursor, custom agents, or other Genesis instances. This is the reverse of the client role — instead of consuming tools from external servers, Genesis provides its own tools to the outside world.
+
+The MCP server runs on **stdio** (stdin/stdout), which is the standard transport for MCP server processes. A client launches Genesis as a subprocess and communicates with it via its pipes.
+
+### Supported MCP methods
+
+| Method | Description |
+|--------|-------------|
+| `initialize` | Handshake: reports protocol version and capabilities |
+| `notifications/initialized` | Client acknowledgement (accepted, no response) |
+| `tools/list` | Return all available tool definitions |
+| `tools/call` | Execute a tool by name with JSON arguments |
+
+Resources and prompts are not currently exposed — only tools.
 
 </What>
+
+<How>
+
+## Starting the MCP server
+
+```bash
+genesis mcp-server
+# or equivalently:
+genesis serve --mcp-stdio
+```
+
+This puts Genesis into stdio MCP server mode. It reads newline-delimited JSON-RPC from stdin and writes responses to stdout. All normal `tracing` log output is redirected to stderr to avoid contaminating the JSON-RPC stream.
+
+## Claude Desktop integration
+
+Add Genesis as an MCP server in your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "genesis": {
+      "command": "genesis",
+      "args": ["mcp-server"],
+      "env": {
+        "OPENAI_API_KEY": "sk-..."
+      }
+    }
+  }
+}
+```
+
+After restarting Claude Desktop, all Genesis tools appear in the tool picker alongside any other MCP servers you have configured.
+
+## Tool backend
+
+The server uses the `McpToolBackend` trait to decouple the MCP protocol layer from the tool implementation:
+
+```rust
+pub trait McpToolBackend: Send + Sync {
+    fn list_tools(&self) -> Vec<McpServerToolDef>;
+    fn call_tool(&self, name: &str, arguments: Value) -> Result<String, String>;
+}
+```
+
+This is implemented by `genesis_tools::ToolRegistry`, which handles tool dispatch and output truncation (64 KiB limit per tool output, with UTF-8-safe boundaries).
+
+## Protocol details
+
+The server reads frames up to **4 MiB** from stdin. Incoming requests are JSON-RPC 2.0:
+
+```json
+// tools/call request
+{
+  "jsonrpc": "2.0",
+  "id": 42,
+  "method": "tools/call",
+  "params": {
+    "name": "shell_exec",
+    "arguments": { "command": "ls -la /tmp" }
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 42,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "total 48\ndrwxrwxrwt 12 root root 4096 Mar 15 10:30 .\n..."
+      }
+    ]
+  }
+}
+```
+
+Tool errors are returned as successful JSON-RPC responses with `isError: true` in the content (per MCP spec), not as JSON-RPC error objects.
+
+Unknown methods return a JSON-RPC `MethodNotFound` (-32601) error.
+
+</How>
+
+<Why>
+
+Exposing Genesis as an MCP server allows any MCP-compatible AI client to leverage its built-in tool ecosystem — shell execution, file operations, web browsing, image generation, memory management, Git operations, and more — without those clients needing to implement any of that tooling themselves. This is particularly valuable for clients like Claude Desktop that support MCP but do not have native tool implementations for many tasks.
+
+The stdio transport was chosen over HTTP because it is simpler to configure, requires no port management, and runs with the user's credentials automatically — the subprocess inherits the environment of the parent process.
+
+</Why>

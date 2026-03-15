@@ -1,14 +1,152 @@
 ---
 title: "genesis skills"
-description: "Skill management"
+description: "Inspect and manage saved agent skills"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-storage/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="skills" usage="genesis skills <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis skills`?
+
+Skills are reusable, named procedures stored in Genesis's SQLite database. When Eve encounters a complex or recurring task, it can create a skill — a prompt template with optional YAML frontmatter describing its purpose, tags, and usage — so the same task can be reproduced quickly in future sessions.
+
+The `skills` command lets you manage that skill library: browse what's stored, inspect individual skills, import and export them, install skills from local SKILL.md files, and access the Skills Hub for community-contributed skills. Skills are automatically suggested to Eve during agent turns via the skill creation nudge when complex multi-step tasks are detected.
 
 </What>
+
+<How>
+
+## Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all saved skills |
+| `show <NAME>` | Show one skill's content and metadata |
+| `delete <NAME>` | Delete a skill by name |
+| `export` | Export all skills as JSON to stdout |
+| `import <FILE>` | Import skills from a JSON file |
+| `scan <DIR>` | Scan a directory of SKILL.md files and list available skills |
+| `search <QUERY>` | Search skills by name, description, or tags |
+| `install-local <PATH>` | Install a skill from a SKILL.md directory into the database |
+| `hub` | Browse, install, and manage skills from registries |
+
+## `skills hub` Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `hub browse` | Browse available skills from all sources |
+| `hub search <QUERY>` | Search skills across registries |
+| `hub inspect <NAME>` | Preview a skill and run a security scan without installing |
+| `hub install <NAME>` | Install a skill from a registry |
+| `hub uninstall <NAME>` | Uninstall a hub-installed skill |
+| `hub audit` | Re-run security scans on all installed hub skills |
+| `hub installed` | List installed hub skills |
+| `hub tap list` | List configured GitHub repo taps |
+| `hub tap add <NAME> <REPO>` | Add a GitHub repository as a skill source |
+| `hub tap remove <NAME>` | Remove a tap by name |
+
+## Options by Subcommand
+
+### `skills search <QUERY>`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--dir <DIR>` | `string` | Also search SKILL.md files in this directory |
+
+### `skills hub browse`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--page <N>` | `usize` | Page number (default: 1) |
+| `--size <N>` | `usize` | Results per page (default: 20) |
+| `--source <NAME>` | `string` | Filter by source name |
+
+### `skills hub search <QUERY>`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--source <NAME>` | `string` | Filter by source name |
+| `--limit <N>` | `usize` | Maximum results (default: 20) |
+
+### `skills hub install <NAME>`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--force` | `bool` | Force install even if security scan reports issues |
+
+### `skills hub tap add <NAME> <REPO>`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--path <PATH>` | `string` | Path within the repo where skills live (default: `skills`) |
+
+## Examples
+
+**List all skills:**
+```bash
+genesis skills list
+```
+
+**Show a specific skill:**
+```bash
+genesis skills show summarize-pr
+```
+
+**Search by keyword:**
+```bash
+genesis skills search "git commit"
+```
+
+**Install from a local SKILL.md directory:**
+```bash
+genesis skills install-local ./my-skill
+```
+
+**Export all skills:**
+```bash
+genesis skills export > skills-backup.json
+```
+
+**Import skills from backup:**
+```bash
+genesis skills import skills-backup.json
+```
+
+**Browse the Skills Hub:**
+```bash
+genesis skills hub browse
+```
+
+**Install a hub skill:**
+```bash
+genesis skills hub install code-review
+```
+
+**Add a community tap:**
+```bash
+genesis skills hub tap add community nooesc/genesis-skills
+```
+
+</How>
+
+<Why>
+
+## SKILL.md Format
+
+Skills follow the [agentskills.io](https://agentskills.io) spec: a YAML frontmatter block containing `name`, `description`, `tags`, and `version`, followed by a Markdown body with the skill instructions. This format supports progressive disclosure — Eve reads only the frontmatter during planning and fetches the full body when the skill is invoked — keeping context windows efficient for large skill libraries.
+
+## Security Scanning
+
+Hub skills go through a context security scan before installation. The scanner checks for prompt injection patterns: invisible unicode, instruction overrides, data exfiltration attempts, role manipulation, and tool abuse signatures. `hub inspect` lets you preview the scan result without committing to installation, and `hub audit` re-runs scans on already-installed skills to catch newly identified patterns.
+
+## Skill Creation Nudge
+
+After complex agent turns (5+ tool calls or 3+ turns on a single task), the agent loop emits a skill creation nudge suggesting that the procedure could be saved as a skill. This is how the skill library grows organically: Eve identifies patterns in your workflows and prompts you to codify them.
+
+</Why>
+
+</CliCommand>

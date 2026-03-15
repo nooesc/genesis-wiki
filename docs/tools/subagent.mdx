@@ -1,16 +1,158 @@
 ---
 title: "Subagent"
-description: "Subagent spawning"
+description: "Spawn and monitor concurrent subagents"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/subagent.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="spawn_subagent" module="builtins/subagent.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does spawn_subagent Do?
+
+`spawn_subagent` creates a child agent to work on a task concurrently with the parent agent. The tool creates the subagent record and a linked child session in the database, then signals the agent loop layer (via the `__subagent_spawn` metadata key) to actually start the child agent loop. Control returns immediately to the parent with the subagent ID, which can be polled later with `check_subagent`.
+
+This enables parallelism for independent subtasks — the parent can spawn multiple subagents and then check their results.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `task` | `string` | Yes | -- | The task description for the subagent to work on |
+| `name` | `string` | No | `"subagent"` | A human-readable label for the subagent |
+
+## Example
+
+```json
+{
+  "name": "spawn_subagent",
+  "arguments": {
+    "task": "Research the top 5 Rust async HTTP client libraries and summarize their trade-offs.",
+    "name": "http-client-researcher"
+  }
+}
+```
+
+**Response:**
+```
+Subagent `http-client-researcher` spawned with ID `sub-session-42-3`.
+It will work on the task concurrently. Use `check_subagent` with this ID to check progress.
+```
+
+</How>
+
+<Why>
+
+## How Spawning Works
+
+The tool itself only writes database records — it does not start any processes or threads. The actual subagent execution is handled by the agent loop layer, which detects the `__subagent_spawn: "true"` key in the tool output metadata and starts a child `SessionExecutionService` in a Tokio task.
+
+Subagent IDs are generated as `sub-<parent_session_id>-<counter>` using an `AtomicU64` counter. Child session IDs follow the same pattern with `child-` prefix. The counter is process-scoped and monotonically increasing.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="check_subagent" module="builtins/subagent.rs" crate="genesis-tools">
+
+<What>
+
+## What Does check_subagent Do?
+
+`check_subagent` queries the status and result of a spawned subagent by its ID. The status field reflects the subagent's lifecycle: `pending` (queued), `running` (active), `completed` (finished with a result), or `failed` (terminated with an error). When completed, the full result text is included in the response.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `subagent_id` | `string` | Yes | The ID returned by `spawn_subagent` |
+
+## Example
+
+```json
+{
+  "name": "check_subagent",
+  "arguments": {
+    "subagent_id": "sub-session-42-3"
+  }
+}
+```
+
+**Response:**
+```
+Subagent: http-client-researcher
+Status: completed
+Task: Research the top 5 Rust async HTTP client libraries...
+Result: Here is a summary of the top 5 Rust async HTTP client libraries...
+Completed at: 2026-03-15 10:45:00
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Reads from `SubagentStore::get`. The `status` metadata field is set to the subagent's current status string so callers can check completion without parsing the content string.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="list_subagents" module="builtins/subagent.rs" crate="genesis-tools">
+
+<What>
+
+## What Does list_subagents Do?
+
+`list_subagents` lists all subagents spawned within the current session, showing their status, name, ID, and — for completed or failed subagents — a brief preview of the result or error. Returns a "no subagents" message if none have been spawned.
+
+</What>
+
+<How>
+
+## Parameters
+
+None.
+
+## Example
+
+```json
+{
+  "name": "list_subagents",
+  "arguments": {}
+}
+```
+
+**Response:**
+```
+2 subagent(s):
+- [completed] http-client-researcher (sub-session-42-3) — Here is a summary of the top 5...
+- [running] doc-writer (sub-session-42-5)
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Uses `SubagentStore::list_by_parent` filtered on the current session ID. Result previews for completed subagents are truncated to 100 characters. The `count` metadata field holds the total number of subagents.
+
+</Why>
+
+</ToolRef>

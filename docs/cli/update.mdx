@@ -1,14 +1,61 @@
 ---
 title: "genesis update"
-description: "Update Genesis from source"
+description: "Update Genesis to the latest version from source"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="update" usage="genesis update" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis update`?
+
+The `update` command fetches the latest version of Genesis from source and rebuilds it in place. Because Genesis is distributed as source code rather than pre-built binaries, updating means pulling the latest commits and recompiling. The command handles both steps: it pulls the latest code and runs a release build, then replaces the running binary.
+
+This is the recommended way to stay current with new features, bug fixes, and tool additions. No flags are required.
 
 </What>
+
+<How>
+
+## Usage
+
+```bash
+genesis update
+```
+
+No options are available. The command uses the source directory that the currently running binary was built from.
+
+## Example
+
+```bash
+$ genesis update
+Pulling latest changes...
+Building Genesis (release)...
+  Compiling genesis-types v0.1.0
+  ...
+  Compiling genesis v0.1.0
+  Finished release [optimized] target(s)
+Installing...
+Updated to v0.3.1 (abc1234)
+```
+
+</How>
+
+<Why>
+
+## Source-Based Updates
+
+Genesis ships as source rather than binary releases. This means updates require a local Rust toolchain (`rustup`, `cargo`), but it also means you always build the exact version for your platform and can inspect every line of code that runs. There are no signature verification steps, no CDN downloads, and no version pinning puzzles.
+
+The `update` command is a convenience wrapper — equivalent to running `git pull && cargo build --release && cargo install --path apps/genesis` from the repository root. It is the standard way to update for users who installed from source via `cargo install`.
+
+</Why>
+
+</CliCommand>

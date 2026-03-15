@@ -1,14 +1,108 @@
 ---
 title: "genesis config"
-description: "Configuration inspection"
+description: "Inspect and modify Genesis configuration"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-config/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="config" usage="genesis config <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis config`?
+
+The `config` command lets you inspect and modify Genesis's configuration without hand-editing YAML. It shows you the resolved configuration (merging the config file with any environment variable overrides), opens the config file in your editor, and lets you set individual values using dot-notation keys.
+
+Configuration lives at `~/.genesis/config.yaml` by default. You can override this path with the global `--config` flag. The resolved config combines the file on disk, environment variable overrides, and built-in defaults — `config show` reflects the final merged result.
 
 </What>
+
+<How>
+
+## Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `path` | Print the resolved config file path |
+| `show` | Print the resolved configuration (YAML, or JSON with `--json`) |
+| `edit` | Open the config file in `$EDITOR` |
+| `set <KEY> <VALUE>` | Set a config value using dot-notation |
+| `validate` | Validate the config file and check for common issues |
+
+## Dot-notation Keys
+
+| Key | Description |
+|-----|-------------|
+| `provider.backend` | LLM provider backend (e.g. `openai`, `anthropic`) |
+| `provider.model` | Model name |
+| `provider.base_url` | API base URL override |
+| `provider.api_key_env` | Environment variable name for the API key |
+| `runtime.max_turns` | Maximum number of agent loop turns |
+| `runtime.max_iterations` | Lifetime LLM call cap |
+| `storage.database_path` | Path to the SQLite database file |
+| `gateway.rate_limit_rpm` | API rate limit in requests per minute |
+| `gateway.idle_timeout` | Server idle timeout |
+
+## Examples
+
+**Show the resolved config path:**
+```bash
+genesis config path
+```
+
+**Print the full resolved configuration:**
+```bash
+genesis config show
+```
+
+**Show config as JSON:**
+```bash
+genesis config show --json
+```
+
+**Open in your editor:**
+```bash
+genesis config edit
+```
+
+**Set a specific value:**
+```bash
+genesis config set provider.model gpt-4.1
+genesis config set runtime.max_turns 50
+genesis config set gateway.rate_limit_rpm 60
+```
+
+**Validate the config:**
+```bash
+genesis config validate
+```
+
+</How>
+
+<Why>
+
+## Config Loading Pipeline
+
+Genesis loads configuration in layers: built-in defaults, then the YAML/TOML config file, then environment variable overrides. The `config show` output reflects the fully merged result after all layers are applied. Environment variables take precedence over the file, so you can always override settings temporarily without modifying the file.
+
+## In-Place YAML Patching
+
+`config set` uses `genesis_config::set_value_in_file` to patch only the targeted key in the YAML file, preserving all other content including comments. It does not re-serialise and rewrite the file, so your formatting and comments survive the change.
+
+## Validation
+
+`config validate` checks for common misconfiguration issues: an unknown provider backend, an empty model name, a missing API key environment variable, a non-existent database directory, and other conditions that would cause runtime failures. It reports errors (fatal) and warnings (non-fatal) separately.
+
+## Profiles
+
+The config system supports named profiles, allowing you to maintain multiple configurations for different use cases (e.g. a production OpenAI profile and a local Ollama profile). Profile switching is managed by editing the config file directly; the `config edit` command opens it for this purpose.
+
+</Why>
+
+</CliCommand>

@@ -1,13 +1,64 @@
 ---
 title: "eval summarize"
-description: "Aggregate replay reports"
-last_synced_commit: "0000000"
+description: "Aggregate replay reports across a directory of trajectory JSON files"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval summarize" usage="genesis eval summarize <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval summarize`?
+
+The `summarize` command scans a directory of trajectory JSON files and produces an aggregate report across all of them. It shows total counts (files, successes, failures, warnings), per-model breakdowns, and tool usage frequency. Filtering flags let you narrow the report to trajectories from a specific model, with a specific tag, that used a specific tool, or that match a particular outcome. This is the primary command for evaluating the overall health of a training dataset or a completed batch run.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Directory containing trajectory JSON files |
+| `--recursive` | `bool` | No | Recursively scan nested directories for trajectory JSON files |
+| `--model <MODEL>` | `string` | No | Only include trajectories for this model |
+| `--tag <TAG>` | `string` | No | Only include trajectories tagged with this value |
+| `--tool <TOOL>` | `string` | No | Only include trajectories that used this tool |
+| `--failures-only` | `bool` | No | Only include trajectories whose outcome is failure |
+| `--warnings-only` | `bool` | No | Only include trajectories that contain replay warnings |
+| `--min-warnings <N>` | `usize` | No | Only include trajectories with at least this many replay warnings |
+
+## Examples
+
+```bash
+# Summarize all trajectories in a directory
+genesis eval summarize ./trajectories
+
+# Summarize only failures from a specific model
+genesis eval summarize ./trajectories --failures-only --model gpt-4.1
+
+# Recursively find trajectories that used the shell tool
+genesis eval summarize ./trajectories --recursive --tool shell_exec
+
+# Show only trajectories with 2 or more warnings
+genesis eval summarize ./trajectories --min-warnings 2
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+`summarize` is the aggregate counterpart to `report`. Rather than printing every step, it collects statistics across the entire directory: pass/fail counts, warning totals, model distribution, and tool usage frequency. Filters are applied before aggregation, so `--failures-only` gives you a summary of just the failing subset. The `--recursive` flag mirrors the behavior in all other eval commands that scan directories.
+
+</Why>
+
+</CliCommand>

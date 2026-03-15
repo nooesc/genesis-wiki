@@ -1,14 +1,239 @@
 ---
 title: "Pairing API"
-description: "DM pairing endpoints"
+description: "Manage DM-pairing authorisation for messaging platform users"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/lib.rs
+  - crates/genesis-storage/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ApiEndpoint } from '@site/src/components/ApiEndpoint';
+
+The DM pairing system controls which messaging platform users (Telegram, Discord, Slack, WhatsApp) are authorised to send messages to Eve. Users initiate pairing from their platform client. An admin then approves or rejects the request via this API.
+
+---
+
+<ApiEndpoint method="GET" path="/pairing/approved" auth={true}>
 
 <What>
 
-*Content coming soon.*
+List all currently approved users, optionally filtered to a specific messaging platform.
 
 </What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `platform` | `string` | — | Filter by platform (`telegram`, `discord`, `slack`, `whatsapp`) |
+
+## Response
+
+```json
+{
+  "users": [
+    {
+      "platform": "telegram",
+      "user_id": "123456789",
+      "approved_at": "2026-03-10 09:00:00"
+    }
+  ],
+  "count": 1
+}
+```
+
+</How>
+
+<Why>
+
+Audit who currently has access to Eve across all platforms. The `platform` filter is useful when you are managing a single platform deployment and do not want cross-platform noise in the list.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/pairing/pending" auth={true}>
+
+<What>
+
+List pending pairing requests waiting for admin approval, optionally filtered to a specific platform.
+
+</What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `platform` | `string` | — | Filter by platform |
+
+## Response
+
+```json
+{
+  "pending": [
+    {
+      "platform": "telegram",
+      "code": "XK9J2M",
+      "requested_at": "2026-03-15 11:00:00"
+    }
+  ],
+  "count": 1
+}
+```
+
+The `code` is a short alphanumeric string that the user sent from their platform client to initiate pairing.
+
+</How>
+
+<Why>
+
+Poll this endpoint (or build a webhook to trigger a check) to catch incoming pairing requests before they expire. Pending codes are tied to the time they were requested — letting them queue unreviewed is a security risk.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="POST" path="/pairing/approve" auth={true}>
+
+<What>
+
+Approve a pending pairing request by platform and code. Once approved, that user's platform account is allowed to interact with Eve via the corresponding webhook.
+
+</What>
+
+<How>
+
+## Request
+
+```json
+{
+  "platform": "telegram",
+  "code": "XK9J2M"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `platform` | Yes | The messaging platform |
+| `code` | Yes | The pairing code the user provided |
+
+## Response
+
+```json
+{
+  "approved": true,
+  "platform": "telegram",
+  "code": "XK9J2M"
+}
+```
+
+Returns an error if the code is not found or has already been used.
+
+</How>
+
+<Why>
+
+Pairing approval is the security gate for messaging platform access. Only approve codes from users you recognise. The code is one-time-use — approving it converts the pending record to an approved user record.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="POST" path="/pairing/revoke" auth={true}>
+
+<What>
+
+Revoke a previously approved user's access. They will no longer be able to send messages to Eve from that platform account.
+
+</What>
+
+<How>
+
+## Request
+
+```json
+{
+  "platform": "telegram",
+  "user_id": "123456789"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `platform` | Yes | The messaging platform |
+| `user_id` | Yes | The platform-native user ID of the user to revoke |
+
+## Response
+
+```json
+{
+  "revoked": true,
+  "platform": "telegram",
+  "user_id": "123456789"
+}
+```
+
+</How>
+
+<Why>
+
+Revoke access immediately when a user should no longer have access — e.g., when an employee leaves, a shared account is compromised, or an account was approved by mistake.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="POST" path="/pairing/clear-pending" auth={true}>
+
+<What>
+
+Clear all pending pairing codes, optionally scoped to a specific platform. Use this to flush a backlog of stale or suspicious requests.
+
+</What>
+
+<How>
+
+## Request
+
+```json
+{
+  "platform": "telegram"
+}
+```
+
+The `platform` field is optional. If omitted, all pending codes across all platforms are cleared.
+
+## Response
+
+```json
+{
+  "cleared": 3,
+  "platform": "telegram"
+}
+```
+
+The `cleared` field is the number of pending records that were deleted.
+
+</How>
+
+<Why>
+
+After a suspected abuse event (e.g., someone is spamming pairing requests), clearing all pending codes resets the queue to a clean state. You can then monitor for new legitimate requests.
+
+</Why>
+
+</ApiEndpoint>

@@ -1,16 +1,116 @@
 ---
 title: "MCP Overview"
-description: "Model Context Protocol"
+description: "How Genesis connects to and exposes tools via the Model Context Protocol"
 crate: genesis-mcp
 source_files:
   - crates/genesis-mcp/src/lib.rs
-last_synced_commit: "0000000"
+  - crates/genesis-mcp/src/client.rs
+  - crates/genesis-mcp/src/server.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is MCP?
+
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open standard for connecting AI agents to external tool servers. A tool server exposes a list of callable tools — functions with JSON Schema parameter definitions — and an agent can discover and call them at runtime without any hardcoded knowledge of what tools exist.
+
+Genesis supports MCP in two directions:
+
+1. **Client** — Genesis connects to external MCP servers (file systems, databases, APIs, development tools) and their tools become available to Eve alongside the 60+ built-in tools.
+2. **Server** — Genesis can expose its own built-in tools as an MCP server, allowing other agents (Claude Desktop, VS Code extensions, custom agents) to call Genesis tools.
+
+## McpManager
+
+The `McpManager` is the central coordinator for all MCP client connections. It:
+
+- Connects to all configured servers at gateway startup.
+- Aggregates tool definitions from all connected servers.
+- Routes tool calls to the correct server by parsing the `mcp_{server_name}__` prefix.
+- **Automatically reconnects** on transport or timeout errors: if a tool call fails because the connection dropped, the manager reconnects the server and retries the call once.
+
+```
+Genesis agent loop
+      │
+      ▼
+ ToolRegistry (built-ins)
+      │
+ McpManager (external tools)
+      ├── McpClient("filesystem") ──── stdio ──── server process
+      ├── McpClient("github")     ──── HTTP  ──── MCP HTTP server
+      └── McpClient("database")   ──── stdio ──── server process
+```
 
 </What>
+
+<How>
+
+## Configuring MCP servers
+
+MCP servers are configured in `~/.genesis/config.yaml` under the `mcp_servers` map:
+
+```yaml
+mcp_servers:
+  filesystem:
+    command: npx
+    args: ["@modelcontextprotocol/server-filesystem", "/home/user/projects"]
+    env: {}
+    connect_timeout_secs: 10
+    call_timeout_secs: 30
+
+  github:
+    url: "http://localhost:8081/mcp"
+    headers:
+      Authorization: "Bearer ghp_..."
+    connect_timeout_secs: 5
+    call_timeout_secs: 15
+```
+
+### Stdio transport (subprocess)
+
+| Field | Description |
+|-------|-------------|
+| `command` | Executable to spawn |
+| `args` | Command-line arguments |
+| `env` | Additional environment variables |
+| `connect_timeout_secs` | Timeout for the initialize handshake |
+| `call_timeout_secs` | Timeout for individual tool calls |
+
+### HTTP transport
+
+| Field | Description |
+|-------|-------------|
+| `url` | HTTP endpoint for JSON-RPC over POST |
+| `headers` | Request headers (for auth, etc.) |
+| `connect_timeout_secs` | Timeout for the initialize handshake |
+| `call_timeout_secs` | Timeout for individual tool calls |
+
+## Tool naming convention
+
+MCP tools are prefixed to avoid collisions with built-in tools:
+
+```
+mcp_{server_name}__{tool_name}
+```
+
+For example, if the server named `filesystem` exposes a tool called `read_file`, it appears in the tool registry as `mcp_filesystem__read_file`. Eve uses this prefixed name when making tool calls; the manager strips the prefix and routes to the correct server.
+
+## Health monitoring
+
+Check the connection status of all configured MCP servers via the API:
+
+```
+GET /health/mcp
+```
+
+</How>
+
+<Why>
+
+MCP makes Genesis extensible without forking the codebase. Need Eve to query your internal database? Run a standard MCP server that wraps your database client and configure Genesis to connect to it — Eve immediately gains the new tools with no code changes. The same tooling works for file access, web browsing, version control, home automation, and any other domain covered by the growing MCP ecosystem.
+
+The automatic reconnection logic is essential for production deployments where MCP servers may restart, update, or experience transient network issues. Rather than failing the entire agent turn, Genesis retries once after reconnecting, providing fault tolerance that is transparent to the user.
+
+</Why>

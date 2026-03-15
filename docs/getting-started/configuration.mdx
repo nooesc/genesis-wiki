@@ -8,6 +8,95 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+Genesis reads its settings from a YAML file and from environment variables. Think of the config file as a permanent address book — it stores your provider API key name, which model to use, and how aggressive to be about context compression. Environment variables act like sticky notes on top of that address book: they override individual values at runtime without you having to edit the file, which is useful in containers and CI pipelines.
+
+The config file lives in `~/.genesis/config.yaml` by default (or `config.toml` if you prefer TOML). Everything in it is optional — Genesis ships with sensible defaults so you can get started with just an API key environment variable set.
 
 </What>
+
+<How>
+
+### Minimal working config
+
+```yaml
+# ~/.genesis/config.yaml
+schema_version: 1
+profile: default
+
+provider:
+  backend: openai          # anthropic, openrouter, or any OpenAI-compatible endpoint
+  model: gpt-4.1-mini
+  api_key_env: OPENAI_API_KEY   # name of the env var holding your key
+```
+
+Then set the key in your shell:
+
+```bash
+export OPENAI_API_KEY=sk-...
+genesis chat
+```
+
+### Full config structure
+
+| Section | Key fields | Purpose |
+|---|---|---|
+| `provider` | `backend`, `model`, `base_url`, `api_key_env`, `tool_call_parser` | Primary LLM provider |
+| `tool_provider` | same as `provider` | Optional cheaper model for tool-call turns |
+| `fallback_providers` | list of provider configs | Tried in order when primary fails |
+| `mcp_servers` | map of name → `command`/`url` | MCP server connections |
+| `storage` | `data_dir`, `database_path` | SQLite location |
+| `runtime` | `max_turns`, `max_concurrency`, `allow_destructive_tools`, `budget_limit`, `max_iterations`, `context_security` | Agent behaviour limits |
+| `gateway` | `idle_timeout_minutes`, `daily_reset_hour`, `rate_limit_rpm`, `cors_origins` | HTTP server policies |
+| `tui` | `enabled`, `animations`, `alt_screen`, `welcome_screen` | TUI appearance |
+| `display` | `tool_progress` | CLI tool call display mode (`off`, `summary`, `grouped`, `verbose`) |
+| `personality` | string | Agent conversational tone |
+
+### Environment variable overrides
+
+Any `runtime.*` or `provider.*` setting can be overridden at runtime:
+
+| Variable | Config equivalent |
+|---|---|
+| `GENESIS_MODEL` | `provider.model` |
+| `GENESIS_PROVIDER_BACKEND` | `provider.backend` |
+| `GENESIS_PROVIDER_BASE_URL` | `provider.base_url` |
+| `GENESIS_PROVIDER_API_KEY_ENV` | `provider.api_key_env` |
+| `GENESIS_TOOL_MODEL` | `tool_provider.model` |
+| `GENESIS_DATA_DIR` | `storage.data_dir` |
+| `GENESIS_DATABASE_PATH` | `storage.database_path` |
+| `GENESIS_PROFILE` | `profile` |
+| `GENESIS_MAX_TURNS` | `runtime.max_turns` |
+| `GENESIS_MAX_CONCURRENCY` | `runtime.max_concurrency` |
+| `GENESIS_ALLOW_DESTRUCTIVE_TOOLS` | `runtime.allow_destructive_tools` |
+| `GENESIS_RATE_LIMIT_RPM` | `gateway.rate_limit_rpm` |
+| `GENESIS_LOG_FORMAT=json` | — enables JSON log output |
+
+### Profiles
+
+Set `profile: staging` in your config (or `GENESIS_PROFILE=staging`) and Genesis will namespace SQLite data under that profile name. This lets you keep separate conversation history for different environments without needing separate config files.
+
+### MCP server example
+
+```yaml
+mcp_servers:
+  my-tool-server:
+    command: npx
+    args: ["-y", "@my-org/mcp-server"]
+    env:
+      MY_API_KEY: "..."
+    timeout: 60
+```
+
+</How>
+
+<Why>
+
+Configuration is loaded by `genesis_config::load()` in `crates/genesis-config/src/lib.rs`. The function reads the YAML/TOML file into an internal `FileConfig` struct (all fields `Option`-wrapped), then merges environment variables on top using a `BTreeMap<String, String>` snapshot. Env vars win unconditionally — there is no priority layering beyond "env beats file".
+
+Both YAML and TOML are accepted because `serde_yaml` and `toml` parsers are cheap to ship and users have strong preferences. The file format is auto-detected by extension.
+
+`schema_version` is present for forward-compatible migrations. Currently only version 1 exists, but the field lets a future release detect and upgrade older configs without breaking existing installs.
+
+The `tool_provider` split exists because reasoning turns (after user messages) benefit from high-quality models, while tool-result turns (after function call outputs) are often straightforward and can use a cheaper, faster model. This halves the cost of agentic workflows without sacrificing answer quality.
+
+</Why>

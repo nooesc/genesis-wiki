@@ -1,14 +1,102 @@
 ---
 title: "genesis insights"
-description: "Usage analytics"
+description: "Show usage insights and analytics"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-storage/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="insights" usage="genesis insights [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis insights`?
+
+The `insights` command analyses your Genesis usage over a configurable time window and reports aggregate statistics: total sessions, total messages, token consumption, estimated cost, most-used tools, and session length distributions. It helps you understand how you and Eve are working together, how much API spend you are incurring, and where most of the activity is concentrated.
+
+The analysis draws exclusively from the local SQLite database — no external calls are made. This means it works offline and is instantaneous regardless of how many sessions are in the database.
 
 </What>
+
+<How>
+
+## Options
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--days <N>` | `u32` | Number of days to analyse (default: 30) |
+
+## Examples
+
+**Show insights for the last 30 days (default):**
+```bash
+genesis insights
+```
+
+**Show insights for the last 7 days:**
+```bash
+genesis insights --days 7
+```
+
+**Show insights for the last year:**
+```bash
+genesis insights --days 365
+```
+
+**Machine-readable JSON output:**
+```bash
+genesis insights --json
+```
+
+**Pipe into jq to extract specific metrics:**
+```bash
+genesis insights --json | jq '.total_tokens'
+```
+
+## Example Output
+
+```
+Usage Insights — last 30 days
+─────────────────────────────────────────
+Sessions:         42
+Messages:         318
+Total tokens:     1,240,500
+  Input:          950,200
+  Output:         290,300
+Est. cost:        $4.72
+
+Top tools:
+  shell           87 calls
+  read_file       64 calls
+  web_search      41 calls
+  edit_file       38 calls
+  memory_search   22 calls
+
+Avg session length:  7.6 turns
+Longest session:     41 turns
+```
+
+</How>
+
+<Why>
+
+## InsightsData Model
+
+The `InsightsData` struct aggregates session and message rows from SQLite across the requested date range. Token counts are read from message metadata stored during execution — the provider records input and output token counts for every LLM call. Cost estimation uses a built-in rate table keyed by model name; estimates are approximations and will differ from provider billing if you use discounted pricing or caching.
+
+## Complementary to `sessions stats`
+
+`genesis sessions stats` shows aggregate statistics across all sessions (total counts, all-time). `genesis insights` focuses on a time-bounded window with richer breakdown: daily trends, tool usage frequency, and cost breakdown by model. Use `sessions stats` for a total picture; use `insights` for recent activity analysis.
+
+## API Equivalent
+
+The same data is available via the `GET /insights?days=30` endpoint when `genesis serve` is running. The CLI command and the API endpoint use the same underlying `InsightsData` query, so the numbers are consistent between the two interfaces.
+
+</Why>
+
+</CliCommand>

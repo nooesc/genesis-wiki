@@ -1,14 +1,84 @@
 ---
 title: "genesis toolset"
-description: "Toolset distributions"
+description: "List and inspect toolset distributions for batch training"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="toolset" usage="genesis toolset <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis toolset`?
+
+The `toolset` command lets you explore the built-in toolset distributions used by `genesis batch` when generating training trajectories. A toolset distribution is a named configuration that defines which of Eve's 60+ builtin tools are available during a batch run, and in what proportions they are sampled.
+
+Rather than giving every prompt access to every tool (which produces unbalanced training data), `genesis batch --toolset <name>` picks a focused subset. Ten distributions are built in: `full`, `development`, `research`, `safe`, `minimal`, `creative`, `ops`, `home-assistant`, `coding-agent`, and `random`. The `toolset` command lets you see what each distribution contains and preview which tools would actually be selected for a given seed.
 
 </What>
+
+<How>
+
+## Sub-commands
+
+| Sub-command | Description |
+|-------------|-------------|
+| `list` | List all available toolset distributions |
+| `show <NAME>` | Show the tools and weights in a specific distribution |
+| `sample <NAME> [--seed]` | Sample the distribution and show which tools would be selected |
+
+## Options
+
+### `genesis toolset show <NAME>`
+
+| Argument | Description |
+|----------|-------------|
+| `NAME` | Distribution name (e.g. `development`, `research`, `safe`) |
+
+### `genesis toolset sample <NAME>`
+
+| Argument / Flag | Description |
+|-----------------|-------------|
+| `NAME` | Distribution name to sample |
+| `--seed <N>` | Random seed for reproducible sampling |
+
+## Examples
+
+**List all distributions:**
+```bash
+genesis toolset list
+```
+
+**Show the tools in the `development` distribution:**
+```bash
+genesis toolset show development
+```
+
+**Preview a random sample from `research`:**
+```bash
+genesis toolset sample research
+```
+
+**Reproducible sample with a fixed seed:**
+```bash
+genesis toolset sample coding-agent --seed 42
+```
+
+</How>
+
+<Why>
+
+## Why Toolset Distributions?
+
+Training data quality depends on variety. If every trajectory uses every tool, the model learns to overfit to a specific tool-calling style. Toolset distributions let you generate diverse datasets: a `safe` distribution omits shell execution and file writes, suitable for trajectories where you want to demonstrate research-only workflows; a `coding-agent` distribution emphasizes code editing, testing, and git operations.
+
+The `sample` sub-command is useful before a `genesis batch` run to verify that the selected distribution will produce the tool mix you expect. With `--seed`, you can lock the sample to get the exact same tool selection as the batch will use, making it easy to reason about what a given batch configuration will produce.
+
+</Why>
+
+</CliCommand>

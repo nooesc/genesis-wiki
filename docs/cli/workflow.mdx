@@ -1,14 +1,81 @@
 ---
 title: "genesis workflow"
-description: "Workflow management"
+description: "Run and manage multi-step workflows"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="workflow" usage="genesis workflow <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis workflow`?
+
+The `workflow` command lets you define and execute multi-step agent workflows from a YAML file. Instead of running a single prompt with `genesis run` or having a freeform conversation with `genesis chat`, a workflow encodes a sequence of steps — each with its own prompt and routing logic — that Eve works through in order.
+
+Workflows are ideal for repeatable, structured processes: code review pipelines, document processing chains, test-generate-fix loops, or any task where you want to capture the shape of what Eve should do rather than describe it ad hoc each time. The `run` sub-command executes a workflow; `validate` checks the YAML file for structural errors without running anything.
 
 </What>
+
+<How>
+
+## Sub-commands
+
+| Sub-command | Description |
+|-------------|-------------|
+| `run <FILE> <INPUT>` | Execute a workflow from a YAML definition file |
+| `validate <FILE>` | Validate a workflow YAML file without executing it |
+
+## Options
+
+### `genesis workflow run <FILE> <INPUT>`
+
+| Argument / Flag | Description |
+|-----------------|-------------|
+| `FILE` | Path to the workflow YAML definition file |
+| `INPUT` | Initial input string passed to the first workflow step |
+| `--session-id <ID>` | Session ID to use (default: auto-generated) |
+
+### `genesis workflow validate <FILE>`
+
+| Argument | Description |
+|----------|-------------|
+| `FILE` | Path to the workflow YAML file to validate |
+
+## Examples
+
+**Run a workflow with initial input:**
+```bash
+genesis workflow run review.yaml "src/auth.rs"
+```
+
+**Run a workflow with a specific session ID:**
+```bash
+genesis workflow run pipeline.yaml "process batch-001" --session-id wf-batch-001
+```
+
+**Validate a workflow file before running:**
+```bash
+genesis workflow validate review.yaml
+```
+
+</How>
+
+<Why>
+
+## Why YAML-Defined Workflows?
+
+Encoding workflows as YAML files rather than shell scripts has several benefits. The definition is declarative — you describe the shape of the process, not the imperative steps to drive Eve through it. The file can be version-controlled alongside your code, making the workflow a reviewable artifact. And `validate` lets you catch structural problems (missing step names, invalid routing, unknown fields) before spending tokens on a broken run.
+
+The `--session-id` flag on `run` is useful for idempotent or resumable workflows: if a run is interrupted, restarting with the same session ID loads the existing conversation history rather than starting fresh.
+
+Workflow execution goes through `SessionExecutionService`, so all normal agent features — tool calling, context compression, hooks, and cancellation — apply within each step.
+
+</Why>
+
+</CliCommand>

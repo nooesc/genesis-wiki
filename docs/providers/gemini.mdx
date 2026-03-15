@@ -1,9 +1,10 @@
 ---
 title: "Gemini"
-description: "Google Gemini provider"
+description: "Google Gemini provider with OpenAI-to-Gemini format translation"
 crate: genesis-provider
 source_files:
   - crates/genesis-provider/src/gemini_types.rs
+  - crates/genesis-provider/src/client.rs
 last_synced_commit: "0000000"
 ---
 
@@ -11,6 +12,77 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+The Gemini backend uses the Google Generative Language API with a full translation layer from OpenAI Chat Completions format to Gemini's `generateContent` format. The API key is passed as a URL query parameter rather than an authorization header.
+
+**Supported models (with known metadata):**
+
+| Model | Context | Max output | Vision | Thinking |
+|---|---|---|---|---|
+| `gemini-2.5-pro` | 1,048,576 | 65,536 | Yes | Yes |
+| `gemini-2.5-flash` | 1,048,576 | 65,536 | Yes | Yes |
+| `gemini-2.0-flash` | 1,048,576 | 8,192 | Yes | No |
+
+**Pricing (USD per million tokens, as of early 2026):**
+
+| Model | Input | Output |
+|---|---|---|
+| `gemini-2.5-pro` | $1.25 | $10.00 |
+| `gemini-2.5-flash` | $0.15 | $0.60 |
+| `gemini-2.0-flash` | $0.10 | $0.40 |
 
 </What>
+
+<How>
+
+### Configuration
+
+```yaml
+# ~/.genesis/config.yaml
+model: gemini-2.5-flash
+backend: gemini
+```
+
+API key is read from `GEMINI_API_KEY` (or `GOOGLE_API_KEY` as fallback). The backend name `google` is accepted as an alias for `gemini`.
+
+### URL construction
+
+The Gemini API endpoint includes the model name and API key in the URL:
+
+```
+https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}
+```
+
+For streaming:
+```
+https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?key={api_key}&alt=sse
+```
+
+`generate_content_url(base, model, api_key)` in `gemini_types.rs` constructs these URLs.
+
+### Format translation
+
+The `to_gemini_request` function in `gemini_types.rs` translates the OpenAI request:
+
+- `messages` (OpenAI roles: user/assistant/system/tool) → Gemini `contents` (roles: `user`/`model`)
+- System messages are combined into a `systemInstruction` block
+- Tool definitions → Gemini `FunctionDeclaration` format
+- `tool_calls` → Gemini function call parts
+- Tool results → Gemini function response parts
+
+The `from_gemini_response` function maps the response back:
+- `candidates[0].content.parts` → text content and tool calls
+- `usageMetadata` → `ChatUsage` with prompt/completion tokens
+
+### Streaming
+
+Gemini streams `GenerateContentResponse` objects as Server-Sent Events. Each SSE event is parsed from the `data:` line and converted to a `ChatCompletionChunk`.
+
+</How>
+
+<Why>
+
+**Query-param auth.** Gemini's API design uses the key as a URL query parameter rather than a header. The `ChatClient` stores the API key separately for Gemini and passes it to `generate_content_url` on every request, keeping it out of the default headers (which are shared across all requests to the same HTTP client).
+
+**System instruction extraction.** Gemini models have a dedicated `systemInstruction` field rather than treating the system role as a regular message turn. The translation layer extracts and combines all system messages into this field, matching Gemini's expected format and avoiding model confusion from seeing system-role content in the conversation turns.
+
+</Why>

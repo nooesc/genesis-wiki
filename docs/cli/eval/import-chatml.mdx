@@ -1,13 +1,49 @@
 ---
 title: "eval import-chatml"
-description: "Import ChatML JSONL"
-last_synced_commit: "0000000"
+description: "Import ChatML JSONL and create trajectory JSON files"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval import-chatml" usage="genesis eval import-chatml <FILE> --output <DIR>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval import-chatml`?
+
+The `import-chatml` command reads a ChatML JSONL file and converts each conversation into a Genesis trajectory JSON file written to the specified output directory. This is the reverse of `export-chatml`: it allows you to bring externally sourced ChatML datasets into the Genesis trajectory format so they can be inspected, filtered, tagged, or used with other `eval` subcommands. Each line in the input JSONL becomes one trajectory file.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<FILE>` | `string` | Yes | Path to a ChatML JSONL file |
+| `--output <DIR>` | `string` | Yes | Directory to write trajectory JSON files into |
+
+## Example
+
+```bash
+# Import a ChatML dataset and convert to trajectory files
+genesis eval import-chatml ./dataset.jsonl --output ./trajectories
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Each line of the input file is parsed as a ChatML conversation object. Messages are mapped back to Genesis trajectory steps: `"user"` messages become user turns, `"assistant"` messages become assistant turns (with tool calls reconstructed if the content matches the Hermes tool-call format), and `"tool"` messages become tool result steps. A synthetic trajectory ID is generated for each conversation. Invalid or malformed lines are skipped with a warning printed to stderr.
+
+</Why>
+
+</CliCommand>

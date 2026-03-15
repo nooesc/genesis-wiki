@@ -8,6 +8,75 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+Running `genesis chat` drops you into an interactive terminal session with Eve, Genesis's AI agent. It works like a messaging app that lives entirely in your terminal: you type a message, press Enter, and Eve responds — using tools like shell execution, file reading, and web search along the way if needed.
+
+By default the session is saved to SQLite so you can resume it later exactly where you left off. Each conversation has its own session ID, and you can branch ("fork") a conversation into parallel threads, undo the last exchange, or search across all past sessions without leaving the chat interface.
 
 </What>
+
+<How>
+
+### Starting a chat
+
+```bash
+genesis chat                          # new session, TUI mode
+genesis chat --no-tui                 # legacy readline mode (no ratatui viewport)
+genesis chat --last                   # resume the most recent session
+genesis chat --resume <session-id>    # resume a specific session
+genesis chat --prompt "list open PRs" # send an initial message before entering interactive mode
+genesis chat --system "You are a DevOps expert" # override the system prompt
+genesis chat --worktree               # isolate the session in a git worktree
+```
+
+### What to expect
+
+When you start a TUI session, Genesis draws an inline viewport. Eve's responses render with Markdown formatting — code blocks are syntax-highlighted, tables are aligned, and headers stand out. Tool calls are displayed as collapsible groups so you can see what Eve did without drowning in output.
+
+Logs are redirected to `~/.genesis/logs/tui.log` automatically so they do not corrupt the viewport.
+
+### Slash commands
+
+Type `/` and press Tab to see completions. All commands work in both TUI and readline modes:
+
+| Command | What it does |
+|---|---|
+| `/help` | Show the full command list |
+| `/history` | Show the last 10 messages |
+| `/new` | Start a fresh session (keeps current process) |
+| `/resume [id]` | Switch to another session; lists recent sessions if no ID given |
+| `/fork` | Branch the conversation into a new child session |
+| `/undo` | Remove the last user + assistant exchange |
+| `/retry` | Undo and re-send the last user message |
+| `/search <query>` | Full-text search across all saved sessions |
+| `/export` | Export the current session as Markdown |
+| `/tokens` | Show token usage and estimated cost |
+| `/model [spec]` | Show current model or switch to another (e.g. `/model anthropic/claude-opus-4`) |
+| `/tools` | List all registered tools |
+| `/memories` | Show stored memories |
+| `/compress` | Trim old messages, keeping 10 most recent |
+| `/stats` | Message counts, token usage, session metadata |
+| `/tag [name]` | Add, list, or remove (`-name`) session tags |
+| `/title [text]` | View or set the session title |
+| `/tree` | Show the conversation branch tree |
+| `/personality` | List or set agent personality |
+| `/clear` | Clear the screen |
+
+Multi-line input: end a line with `\` to continue on the next line.
+
+### Exiting
+
+Type `exit`, `quit`, `bye`, or press `Ctrl-C` / `Ctrl-D`.
+
+</How>
+
+<Why>
+
+The TUI is built with `ratatui` (`crates/genesis-tui`). When stdout is a terminal and `--no-tui` is not set, the main binary detects TUI mode before initializing tracing — this is critical because any log output written to stdout would corrupt the ratatui viewport. Logs are redirected to a file at `~/.genesis/logs/tui.log` instead.
+
+Session persistence is handled by `genesis-storage`'s `SessionStore`, backed by SQLite. Sessions are auto-created on first message with a UUID and stored indefinitely. The `--last` flag queries `list_recent_sessions(1)` to find the most recent session by `updated_at` timestamp.
+
+Slash commands are parsed client-side in `crates/genesis-cli/src/slash.rs` by `handle_chat_command()`. They operate directly on the `SessionStore` and `MemoryStore` without going through the agent loop, so they respond instantly. The `/fork` command calls `SessionStore::fork_session()`, which copies the current session's messages into a new session with a `parent_session_id` reference — enabling the `/tree` view to walk the branch hierarchy.
+
+The `--worktree` flag creates an isolated git worktree via `WorktreeGuard`, sets it as the agent's `default_working_dir`, and cleans up the worktree automatically when the session ends.
+
+</Why>

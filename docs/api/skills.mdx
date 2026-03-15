@@ -1,14 +1,315 @@
 ---
 title: "Skills API"
-description: "Skill management endpoints"
+description: "CRUD endpoints for agent skills and usage statistics"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ApiEndpoint } from '@site/src/components/ApiEndpoint';
+
+<ApiEndpoint method="GET" path="/skills" auth={true}>
 
 <What>
 
-*Content coming soon.*
+List all skills stored in the database. Skills are reusable procedures that Eve learns and invokes automatically when user requests match their trigger hints.
 
 </What>
+
+<How>
+
+## Response
+
+```json
+{
+  "skills": [
+    {
+      "name": "code-review",
+      "description": "Review code for bugs, style issues, and security vulnerabilities",
+      "instructions": "1. Read the target file with read_file...",
+      "trigger_hint": "review code",
+      "tags": ["development", "quality"],
+      "version": 3,
+      "created_at": "2026-03-10 09:00:00",
+      "updated_at": "2026-03-14 14:22:10"
+    }
+  ],
+  "count": 1
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `name` | Unique identifier for the skill |
+| `description` | Short human-readable summary |
+| `instructions` | The full procedure body injected into the system prompt |
+| `trigger_hint` | Phrase that triggers automatic skill selection |
+| `tags` | Searchable category labels |
+| `version` | Incremented on each update via upsert |
+
+</How>
+
+<Why>
+
+Use this to audit what skills Eve has learned, build skill management UIs, or export the skill catalog for backup.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="POST" path="/skills" auth={true}>
+
+<What>
+
+Create a new skill or update an existing one (upsert by name). The version is incremented automatically on each write.
+
+</What>
+
+<How>
+
+## Request
+
+```json
+{
+  "name": "deploy-app",
+  "description": "Deploy the application to production using kubectl",
+  "instructions": "1. Run `kubectl apply -f k8s/` in the repo root.\n2. Monitor with `kubectl rollout status deployment/app`.",
+  "trigger_hint": "deploy to production",
+  "tags": ["ops", "kubernetes", "deploy"]
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Unique skill identifier |
+| `description` | Yes | Short summary shown in listings |
+| `instructions` | Yes | Full procedure text injected into the system prompt |
+| `trigger_hint` | No | Natural language phrase that activates auto-loading |
+| `tags` | No | Array of category strings for tag-based search |
+
+## Response
+
+The created or updated skill object is returned.
+
+</How>
+
+<Why>
+
+The upsert pattern means you can push an improved version of a skill without worrying about whether it already exists. Eve itself calls this endpoint via the `skill_create` tool after complex interactions.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/skills/search" auth={true}>
+
+<What>
+
+Search skills by tag. Returns all skills that have the specified tag in their tag list.
+
+</What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `tag` | `string` | Yes | Tag to filter by (exact match) |
+
+## Response
+
+```json
+{
+  "skills": [
+    {
+      "name": "deploy-app",
+      "description": "Deploy the application to production",
+      "tags": ["ops", "kubernetes"]
+    }
+  ],
+  "count": 1
+}
+```
+
+</How>
+
+<Why>
+
+Tag-based search is the recommended way to build skill pickers. Apply a consistent tagging convention (`ops`, `dev`, `data`, etc.) when creating skills so related ones can be grouped together.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/skills/{name}" auth={true}>
+
+<What>
+
+Fetch the full details of a single skill by its name. Returns `404` if the skill does not exist.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "name": "deploy-app",
+  "description": "Deploy the application to production using kubectl",
+  "instructions": "1. Run `kubectl apply -f k8s/`...",
+  "trigger_hint": "deploy to production",
+  "tags": ["ops", "kubernetes"],
+  "version": 2,
+  "created_at": "2026-03-10 09:00:00",
+  "updated_at": "2026-03-14 14:22:10"
+}
+```
+
+</How>
+
+<Why>
+
+Load a skill to display its full instructions in an editor, or to check its current version before deciding whether to update it.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="DELETE" path="/skills/{name}" auth={true}>
+
+<What>
+
+Permanently delete a skill by name. Returns `404` if the skill does not exist.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "deleted": true,
+  "name": "deploy-app"
+}
+```
+
+</How>
+
+<Why>
+
+Removing a skill removes it from the system prompt injection, so Eve will no longer follow its instructions. Delete outdated or incorrect skills rather than leaving them injected into every prompt.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/skills/{name}/usage" auth={true}>
+
+<What>
+
+Return aggregate usage statistics for a skill: total invocations, success/failure breakdown, and refinement count.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "skill_name": "deploy-app",
+  "total_uses": 14,
+  "successes": 12,
+  "failures": 2,
+  "partial": 0,
+  "times_refined": 3
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `total_uses` | Total times `skill_record_usage` was called for this skill |
+| `successes` | Invocations with outcome `"success"` |
+| `failures` | Invocations with outcome `"failure"` |
+| `partial` | Invocations with outcome `"partial"` |
+| `times_refined` | How many times the skill's instructions have been updated |
+
+</How>
+
+<Why>
+
+High failure rates indicate the skill instructions need refinement. Skills with a high refinement count are typically the most reliable, since they have been iteratively improved from real usage.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/skills/{name}/usage/recent" auth={true}>
+
+<What>
+
+Return the most recent usage records for a skill, showing session, outcome, and any feedback provided at invocation time.
+
+</What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | `integer` | `20` | Maximum number of records to return |
+
+## Response
+
+```json
+{
+  "skill_name": "deploy-app",
+  "usages": [
+    {
+      "id": 42,
+      "skill_name": "deploy-app",
+      "session_id": "api-1741234567890-1",
+      "outcome": "success",
+      "feedback": null,
+      "created_at": "2026-03-15 11:00:00"
+    },
+    {
+      "id": 38,
+      "skill_name": "deploy-app",
+      "session_id": "api-1741000000000-5",
+      "outcome": "failure",
+      "feedback": "Timed out waiting for rollout",
+      "created_at": "2026-03-14 08:45:00"
+    }
+  ],
+  "count": 2
+}
+```
+
+</How>
+
+<Why>
+
+Review the feedback text from failure cases to understand what went wrong and update the skill instructions accordingly. The `session_id` lets you load the full conversation for deeper investigation.
+
+</Why>
+
+</ApiEndpoint>

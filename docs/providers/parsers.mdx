@@ -1,6 +1,6 @@
 ---
 title: "Tool Call Parsers"
-description: "10 tool call parsers"
+description: "10 parsers for models that embed tool calls in text content"
 crate: genesis-provider
 source_files:
   - crates/genesis-provider/src/parsers.rs
@@ -11,6 +11,150 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+Some open-source models do not use the standard OpenAI `tool_calls` field. Instead they embed tool calls in the text content of their response using model-specific markup. Genesis has 10 parsers that extract these embedded calls and convert them to `ToolCallEntry` objects.
+
+**Available parsers:**
+
+| Parser name | Config aliases | Target models |
+|---|---|---|
+| `hermes` | `qwen`, `qwen25` | NousResearch Hermes-*, Qwen 2.5 |
+| `longcat` | — | Longcat models |
+| `mistral` | — | Mistral (pre-v11 and v11+) |
+| `llama` | `llama3`, `llama4` | Meta Llama 3/4 models |
+| `deepseek_v3` | `deepseek-v3` | DeepSeek V3 (markdown code block format) |
+| `deepseek_v31` | `deepseek-v31`, `deepseek_v3.1` | DeepSeek V3.1 (no code block) |
+| `kimi_k2` | `kimi-k2` | Moonshot Kimi K2 |
+| `glm45` | `glm-4.5`, `glm4.5` | GLM 4.5 |
+| `glm47` | `glm-4.7`, `glm4.7` | GLM 4.7 |
+| `qwen3_coder` | `qwen3-coder` | Qwen3-Coder |
 
 </What>
+
+<How>
+
+### Auto-detection
+
+`detect_parser(model)` inspects the model name and returns the appropriate parser:
+
+```rust
+let parser: Option<Box<dyn ToolCallParser>> = detect_parser("NousResearch/Hermes-3-Llama-3.1-70B");
+// Some(HermesParser)
+```
+
+Auto-detection rules (evaluated in order):
+1. Contains `qwen3` AND `coder` → `Qwen3CoderParser`
+2. Contains `hermes` → `HermesParser`
+3. Contains `deepseek` AND (`v3.1` or `v31`) → `DeepSeekV31Parser`
+4. Contains `deepseek` AND `v3` → `DeepSeekV3Parser`
+5. Contains `kimi` AND `k2` → `KimiK2Parser`
+6. Contains `glm` AND `4.7` → `Glm47Parser`
+7. Contains `glm` AND `4.5` → `Glm45Parser`
+8. Contains `qwen` → `HermesParser` (Qwen 2.5 uses Hermes format)
+9. Contains `mistral` or `mixtral` → `MistralParser`
+10. Contains `llama` → `LlamaParser`
+
+Returns `None` for models that use native tool calling (OpenAI, Anthropic, Gemini).
+
+### Explicit configuration
+
+Override auto-detection in config:
+
+```yaml
+tool_call_parser: hermes  # or any parser name/alias from the table
+```
+
+Or pass via `get_parser(name)`:
+
+```rust
+let parser = get_parser("hermes")?;
+```
+
+### Parser formats
+
+**Hermes / Qwen 2.5:**
+```
+<tool_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</tool_call>
+```
+
+**Longcat:**
+```
+<longcat_tool_call>{"name": "search", "arguments": {"query": "Rust async"}}</longcat_tool_call>
+```
+
+**Mistral (pre-v11):**
+```
+[TOOL_CALLS] [{"name": "get_weather", "arguments": {"location": "Paris"}}]
+```
+
+**Mistral v11+:**
+```
+[TOOL_CALLS] get_weather{"location": "Paris"}
+```
+
+**Llama (raw JSON or python\_tag prefix):**
+````text
+<|python_tag|>{"name": "get_weather", "arguments": {"location": "Paris"}}
+````
+or just a bare JSON object.
+
+**DeepSeek V3:**
+````text
+<|tool▁calls▁begin|>
+<|tool▁call▁begin|>function<|tool▁sep|>get_weather
+{"location": "Paris"}
+<|tool▁call▁end|>
+<|tool▁calls▁end|>
+````
+
+**DeepSeek V3.1:**
+````text
+<|tool▁call▁begin|>get_weather<|tool▁sep|>{"location": "Paris"}<|tool▁call▁end|>
+````
+
+**Kimi K2:**
+````text
+<|tool_calls_section_begin|>
+<|tool_call_begin|>functions.get_weather:0<|tool_call_argument_begin|>{"location": "Paris"}<|tool_call_end|>
+<|tool_calls_section_end|>
+````
+
+**GLM 4.5 / 4.7:**
+````text
+<tool_call>get_weather
+<arg_key>location</arg_key><arg_value>Paris</arg_value>
+</tool_call>
+````
+
+**Qwen3-Coder:**
+````text
+<tool_call>
+<function=get_weather>
+<parameter=location>Paris</parameter>
+</function>
+</tool_call>
+````
+
+### Parser output
+
+All parsers return `Option<ParseResult>`:
+
+```rust
+pub struct ParseResult {
+    pub content: Option<String>,   // text before the tool call markup
+    pub tool_calls: Vec<ToolCallEntry>,
+}
+```
+
+`None` means no tool calls were found in the text. `content` is `None` if the entire response was tool calls with no preceding text.
+
+</How>
+
+<Why>
+
+**10 parsers instead of a generic one.** Each open-source model family adopted its own markup format independently. A single generic parser would either fail on edge cases or require complex branching. Dedicated parsers with fast-exit checks (checking for the start token before running a regex) keep parsing efficient and correct.
+
+**Fast-exit on start token.** Every parser checks for its specific start token (e.g., `<tool_call>`, `[TOOL_CALLS]`, `<\|tool▁calls▁begin\|>`) before running any regex. This means for the vast majority of responses (which contain no tool calls), the parser returns `None` immediately with a single string `contains` check.
+
+**Content preservation.** All parsers capture text that appears before the first tool call markup in `ParseResult::content`. This preserves the model's reasoning or prose output while cleanly separating the executable tool calls.
+
+</Why>

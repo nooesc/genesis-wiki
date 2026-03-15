@@ -1,16 +1,72 @@
 ---
 title: "Image Generation"
-description: "DALL-E image generation"
+description: "Generate images with DALL-E"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/image_gen.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="image_generation" module="builtins/image_gen.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does image_generation Do?
+
+`image_generation` generates an image from a text prompt using an OpenAI-compatible DALL-E API endpoint and saves the result to a local file. Provide a description of what you want, the path where the image should be saved, and optional controls for size, quality, and style. The response reports the output path, byte count, and — for DALL-E 3 — any prompt revision the model applied.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `prompt` | `string` | Yes | -- | Text description of the image to generate |
+| `output_path` | `string` | Yes | -- | File path where the generated image will be saved (PNG) |
+| `model` | `string` | No | `"dall-e-3"` | Image generation model to use |
+| `size` | `string` | No | `"1024x1024"` | Image dimensions. Must be one of: `256x256`, `512x512`, `1024x1024`, `1024x1792`, `1792x1024` |
+| `quality` | `string` | No | `"standard"` | Image quality: `"standard"` or `"hd"` |
+| `style` | `string` | No | `"vivid"` | Image style: `"vivid"` or `"natural"` |
+| `api_base` | `string` | No | `$OPENAI_API_BASE` or `https://api.openai.com/v1` | API base URL |
+| `api_key` | `string` | No | `$OPENAI_API_KEY` | API key (falls back to env var) |
+
+## Example
+
+```json
+{
+  "name": "image_generation",
+  "arguments": {
+    "prompt": "A photorealistic rust crab wearing a wizard hat, standing in a server room",
+    "output_path": "/tmp/rust-wizard.png",
+    "size": "1024x1024",
+    "quality": "hd"
+  }
+}
+```
+
+**Response:**
+```
+Image generated and saved to /tmp/rust-wizard.png (1048576 bytes, 1024x1024)
+Revised prompt: A photorealistic illustration of a rust-colored crab...
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The API is called with `response_format: "b64_json"` to receive the image as base64 in the response body rather than as a URL. This avoids a second HTTP round-trip to download the image and works with self-hosted endpoints that may not serve generated images over HTTP.
+
+The base64 payload is decoded and written directly to `output_path` using `fs::write`. The size parameter is validated against the allowed list before making the API call to give a clear error before spending tokens or API credits.
+
+The 120-second timeout on the HTTP client reflects that image generation can be slow, especially for `hd` quality.
+
+</Why>
+
+</ToolRef>

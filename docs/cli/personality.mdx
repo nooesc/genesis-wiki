@@ -1,14 +1,92 @@
 ---
 title: "genesis personality"
-description: "Personality switching"
+description: "List and preview agent personalities"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="personality" usage="genesis personality <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis personality`?
+
+The `personality` command lets you browse the 13 built-in agent personalities that shape how Eve communicates. Each personality modifies Eve's tone, style, and level of formality without changing her underlying capabilities or tool access.
+
+Personalities range from the default professional tone to playful (kawaii), noir detective, philosophical, pirate, and others. You can preview any personality before activating it to see how it affects response style, then set it as the active personality via `genesis config set`.
 
 </What>
+
+<How>
+
+## Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all available personalities |
+| `show <NAME>` | Show details and a sample response for a specific personality |
+
+## Examples
+
+**List all personalities:**
+```bash
+genesis personality list
+```
+
+**Preview the kawaii personality:**
+```bash
+genesis personality show kawaii
+```
+
+**Preview the noir personality:**
+```bash
+genesis personality show noir
+```
+
+**Set a personality as the active one:**
+```bash
+genesis config set personality.active pirate
+```
+
+## Built-in Personalities
+
+| Name | Description |
+|------|-------------|
+| `default` | Professional, concise, Eve's standard voice |
+| `kawaii` | Playful, enthusiastic, with anime-style expressions |
+| `pirate` | Nautical metaphors, seafaring vernacular |
+| `noir` | Moody detective narration, dry wit |
+| `philosopher` | Contemplative, probing, Socratic |
+| `sherlock` | Analytical deduction, observational detail |
+| `samurai` | Disciplined, honour-bound, terse |
+| `bard` | Poetic, lyrical, Shakespearean flourishes |
+| `coach` | Motivational, direct, action-oriented |
+| `academic` | Formal, citation-aware, measured |
+| `hacker` | Technical slang, CLI-native idioms |
+| `zen` | Calm, minimal, aphoristic |
+| `chaos` | Unpredictable, lateral thinking, absurdist |
+
+</How>
+
+<Why>
+
+## System Prompt Injection
+
+Personalities work by prepending a style directive to Eve's system prompt. The `SystemPromptBuilder` in `genesis-core` reads the active personality from config and injects the corresponding style text. This means personality changes take effect at the start of the next session — an in-progress `chat` session retains the personality it started with.
+
+## Keeping Capabilities Constant
+
+Personalities modify how Eve speaks, not what she can do. All tool access, memory recall, skill invocation, and agent loop behaviour remain identical across personalities. A pirate Eve can still run shell commands and search the web; she just narrates the results with more "arr" than the default Eve would.
+
+## Custom Personalities
+
+Beyond the 13 built-ins, you can define custom personalities by adding entries to the `personalities` section of your config file. Each entry needs a `name` and a `system_prompt_prefix` string. Custom personalities appear alongside built-ins in `personality list` and can be set as the active personality via `config set`.
+
+</Why>
+
+</CliCommand>

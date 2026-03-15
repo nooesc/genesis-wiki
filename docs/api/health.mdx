@@ -1,14 +1,114 @@
 ---
 title: "Health API"
-description: "Health and MCP status"
+description: "Gateway health check and MCP server status endpoints"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ApiEndpoint } from '@site/src/components/ApiEndpoint';
+
+<ApiEndpoint method="GET" path="/health" auth={false}>
 
 <What>
 
-*Content coming soon.*
+The primary health check endpoint. Returns gateway status, version, uptime, active model, and aggregate counts. This endpoint is public — no authentication required — making it suitable for load balancer probes and uptime monitors.
 
 </What>
+
+<How>
+
+## Response
+
+```json
+{
+  "status": "ok",
+  "version": "0.8.0",
+  "uptime_seconds": 86400,
+  "model": "anthropic/claude-sonnet-4",
+  "mcp_servers": 2,
+  "active_schedules": 3,
+  "total_sessions": 1247,
+  "total_tools": 62
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `status` | Always `"ok"` when the server is up and processing requests |
+| `version` | Semantic version from `Cargo.toml` |
+| `uptime_seconds` | Seconds since the gateway process started |
+| `model` | Currently configured model in `backend/model` format |
+| `mcp_servers` | Number of connected MCP servers |
+| `active_schedules` | Number of enabled (running) scheduled tasks |
+| `total_sessions` | Total sessions in the database |
+| `total_tools` | Combined count of built-in tools and MCP-provided tools |
+
+</How>
+
+<Why>
+
+Use this endpoint for:
+- Load balancer health probes (expect HTTP 200)
+- Uptime monitoring dashboards
+- Quick sanity-checks after deployment (`curl http://localhost:8080/health | jq .`)
+- Verifying the correct model is configured before running batch jobs
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/health/mcp" auth={false}>
+
+<What>
+
+Detailed status for each connected MCP server. Shows per-server connection state and aggregate counts for tools, resources, and prompts exposed by all connected servers.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "servers": [
+    {
+      "name": "filesystem",
+      "connected": true
+    },
+    {
+      "name": "github",
+      "connected": false
+    }
+  ],
+  "total_tools": 18,
+  "total_resources": 0,
+  "total_prompts": 0
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `servers` | One entry per configured MCP server |
+| `servers[].name` | Server name from the config file |
+| `servers[].connected` | `true` if the server is currently connected and responding |
+| `total_tools` | Sum of tools across all connected servers |
+| `total_resources` | Sum of MCP resources (files, URIs) exposed by servers |
+| `total_prompts` | Sum of MCP prompt templates exposed by servers |
+
+When no MCP servers are configured, all fields return zero/empty.
+
+</How>
+
+<Why>
+
+MCP servers can disconnect while the gateway stays running. This endpoint lets you detect partially-connected states where some external tool servers are down. If a server shows `connected: false`, check its process, network connectivity, or configuration. The gateway will attempt automatic reconnection on the next tool call to that server.
+
+</Why>
+
+</ApiEndpoint>

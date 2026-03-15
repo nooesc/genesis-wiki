@@ -1,16 +1,100 @@
 ---
 title: "Code Execution"
-description: "Python/JS code execution"
+description: "Run Python, Node.js, or Ruby code in a sandboxed subprocess; optionally with tool RPC access via PTC"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/code_execution.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="execute_code" module="builtins/code_execution.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Runs a snippet of code in a sandboxed subprocess. The sandbox strips the environment of all secret-bearing variables (anything containing `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL`, `PASSWD`, or `AUTH` in its name) before spawning the child process.
+
+Two execution modes are available:
+
+**Basic mode** — Runs code directly with `python3 -c`, `node -e`, or `ruby -e`. Captures stdout and stderr. A timeout kills the process if it exceeds the limit. This mode is invoked by calling the tool directly.
+
+**PTC mode (Programmatic Tool Calling)** — When the `genesis-core` execution service intercepts an `execute_code` call, it routes it through `execute_code_ptc` instead. In PTC mode, a `genesis_tools.py` stub module is injected into the script's working directory, and a Unix domain socket RPC server is started. The Python script can import `genesis_tools` and call `terminal()`, `read_file()`, `write_file()`, `search_files()`, `patch()`, `web_search()`, and `browse()` — which are routed back through the Genesis tool registry. PTC mode has a 5-minute timeout and a 50-call limit.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `code` | `string` | Yes | — | The code to execute |
+| `language` | `string` | No | `"python"` | Language runtime: `python`, `python3`, `node`, `javascript`, `js`, or `ruby` |
+| `timeout_secs` | `string` | No | `"30"` | Seconds before the process is killed (basic mode only) |
+
+## Example: Basic Python
+
+```json
+{
+  "name": "execute_code",
+  "arguments": {
+    "code": "import json\ndata = [1, 2, 3]\nprint(json.dumps({'sum': sum(data), 'count': len(data)}))"
+  }
+}
+```
+
+**Response:**
+```
+{"sum": 6, "count": 3}
+```
+
+## Example: PTC mode (Python with tool access)
+
+```python
+# This script runs in PTC mode when execute_code is invoked via the agent loop
+from genesis_tools import terminal, read_file, web_search
+
+# Run a shell command
+result = terminal("git log --oneline -5")
+print(result)
+
+# Search the web
+hits = web_search("Rust async runtime comparison 2026", limit=3)
+print(hits)
+```
+
+### Available PTC Functions
+
+| Python function | Maps to Genesis tool |
+|----------------|---------------------|
+| `terminal(command, timeout, workdir)` | `shell_exec` |
+| `read_file(path, offset, limit)` | `read_file` |
+| `write_file(path, content)` | `write_file` |
+| `search_files(pattern, target, path, file_glob, limit)` | `search_files` |
+| `patch(path, old_string, new_string, replace_all)` | `patch` |
+| `web_search(query, limit)` | `web_search` |
+| `browse(url)` | `browse` |
+
+The stub module also provides `json_parse(text)`, `shell_quote(s)`, and `retry(fn, max_attempts, delay)` as utility helpers.
+
+### Allowed Environment Variables (Basic Mode)
+
+Only `PATH`, `HOME`, `LANG`, `TERM`, and `TMPDIR` are passed through to the subprocess. All other variables — including any secrets — are stripped.
+
+</How>
+
+<Why>
+
+**Why environment stripping?** The subprocess inherits a cleaned environment because untrusted code in the agent's context could exfiltrate any env var it can read via print statements. The substring-based secret detection (`KEY`, `TOKEN`, etc.) is deliberately coarse — it is better to over-block than to accidentally pass a credential. Safe system variables (PATH, HOME, etc.) are whitelisted explicitly.
+
+**Why `block_in_place` is not used here?** Basic mode uses `std::process::Command` and a polling loop with `child.try_wait()`, which are synchronous OS operations. No async runtime interaction is needed, so there is no need for `tokio::task::block_in_place`.
+
+**PTC RPC protocol:** The Unix domain socket uses newline-delimited JSON. Request format: `{"tool": "shell_exec", "args": {"command": "ls"}}\n`. Response format: the raw tool output content as a JSON-encoded string, followed by a newline. This simple framing avoids needing length-prefix encoding while being easy to implement in both Python (the client) and Rust (the server).
+
+**Output limits:** Stdout is captured by two background threads (one for stdout, one for stderr) to prevent OS pipe buffer deadlocks. Basic mode truncates output at 64 KiB using the shared `truncate_output_bytes` function. PTC mode captures up to 50 KB of stdout and 10 KB of stderr.
+
+</Why>
+
+</ToolRef>

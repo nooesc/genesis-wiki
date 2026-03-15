@@ -1,16 +1,133 @@
 ---
 title: "Skills Hub"
-description: "Hub client and skill installation"
+description: "Install and manage skills from local and GitHub sources"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/skills_hub.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Skills Hub?
+
+The Skills Hub is a client for discovering and installing SKILL.md files from multiple sources. It manages a local skills directory, a lock file for provenance tracking, and a security pipeline that scans every incoming skill before installation.
+
+### Skill sources
+
+| Source | Description |
+|--------|-------------|
+| `Local` | Bundled optional skills shipped with Genesis (from `skills/` in the repo) |
+| `GitHub` | Skills from a GitHub repository via the taps mechanism |
+| `Registry` | Reserved for future hosted registry support |
+
+A **tap** is a named pointer to a GitHub repository containing skills. Taps are stored in a JSON configuration file and allow you to add third-party skill collections to your hub.
 
 </What>
+
+<How>
+
+## CLI commands
+
+```bash
+genesis skills list               # List all installed skills
+genesis skills show <name>        # Show skill details
+genesis skills scan               # Scan local SKILL.md directories
+genesis skills install-local <path>  # Install a skill from a local file or directory
+genesis skills delete <name>      # Remove an installed skill
+genesis skills import <file>      # Import skill from JSON export
+genesis skills export <name>      # Export skill to JSON
+genesis skills search <query>     # Search by name, description, or tag
+```
+
+## Lock file
+
+Every installed skill is recorded in `~/.genesis/skills/.lock.json`. The lock file entry contains:
+
+```json
+{
+  "name": "code-review",
+  "version": "1.0",
+  "source": { "local": null },
+  "installed_at": 1741234567,
+  "content_hash": "sha256:abc123..."
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `name` | Skill identifier |
+| `version` | Version string from frontmatter |
+| `source` | Where the skill came from (`local`, `github`, or `registry`) |
+| `installed_at` | Unix timestamp of installation |
+| `content_hash` | SHA-256 of the installed skill directory contents |
+
+## Taps (GitHub sources)
+
+Add a tap to pull skills from a GitHub repository:
+
+```bash
+genesis skills tap add my-skills --owner myorg --repo agent-skills --path skills
+```
+
+Taps are stored in `~/.genesis/skills/.taps.json`:
+
+```json
+{
+  "taps": [
+    {
+      "name": "my-skills",
+      "owner": "myorg",
+      "repo": "agent-skills",
+      "path": "skills"
+    }
+  ]
+}
+```
+
+Once a tap is added, list available skills from it and install them:
+
+```bash
+genesis skills list --tap my-skills
+genesis skills install my-skills/deploy-app
+```
+
+## Security pipeline
+
+All incoming skills pass through `skills_guard` scanning before installation:
+
+1. **Quarantine** — The SKILL.md content is checked before being written to disk.
+2. **Guard scan** — The `skills_guard` module analyses the instructions for suspicious patterns: prompt injection attempts, dangerous tool usage, data exfiltration patterns, etc.
+3. **Trust levels** — Guard reports assign a trust level (`Safe`, `Caution`, `Blocked`). Skills with a `Blocked` verdict are rejected and not installed.
+4. **Integrity verification** — On audit, the current content hash is compared against the lock file. A mismatch indicates the skill was modified after installation.
+
+## Auditing installed skills
+
+```bash
+genesis skills audit              # Audit all installed skills
+genesis skills audit code-review  # Audit a specific skill
+```
+
+Audit output:
+
+```json
+{
+  "name": "code-review",
+  "verdict": "Safe",
+  "finding_count": 0,
+  "summary": "No suspicious patterns detected.",
+  "integrity_ok": true
+}
+```
+
+</How>
+
+<Why>
+
+The Skills Hub makes skill management reproducible and auditable. The lock file gives you a cryptographic record of exactly what was installed and from where — analogous to `Cargo.lock` or `package-lock.json`. This matters for security: a skill can modify Eve's behavior in subtle ways, so having a clear provenance trail and security scan is important before deploying skills in production environments.
+
+The taps mechanism is designed to enable a community ecosystem of shared skills without requiring a centralised registry. Any public GitHub repository can become a source of installable skills.
+
+</Why>

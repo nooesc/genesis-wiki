@@ -1,16 +1,107 @@
 ---
 title: "Personalities"
-description: "13 agent personalities"
+description: "13 built-in agent personalities that modify the system prompt"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/personality.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What are Personalities?
+
+Personalities are named tone and style presets that prepend a short directive to the agent's system prompt. Switching personalities changes how Eve phrases responses — not what she knows or what tools she uses.
+
+Genesis ships 13 built-in personalities:
+
+| Name | Description |
+|------|-------------|
+| `default` | Neutral, practical, clear, concise |
+| `kawaii` | Bubbly, affectionate, warm, upbeat |
+| `pirate` | Nautical adventurer with seafarer flair |
+| `noir` | Brooding, cinematic detective tone |
+| `philosopher` | Reflective, first-principles reasoning |
+| `poet` | Lyrical, imagery-rich but factually precise |
+| `scientist` | Evidence-first, hypothesis-driven, rigorous |
+| `chef` | Warm culinary metaphors, practical guidance |
+| `coach` | Motivational, direct, concrete next steps |
+| `detective` | Investigative, clue-listing, logical deduction |
+| `bard` | Dramatic storytelling with theatrical flair |
+| `zen` | Calm, minimal, mindful brevity |
+| `hacker` | Technical precision, systems thinking |
+
+Each personality has a `name`, a `description` (shown in `genesis personality list`), and a `system_prompt_prefix` (prepended to the system prompt at runtime).
 
 </What>
+
+<How>
+
+## Setting a Personality
+
+```bash
+# List available personalities
+genesis personality list
+
+# Set the active personality
+genesis personality set pirate
+
+# Show the current personality
+genesis personality get
+
+# Reset to default
+genesis personality set default
+```
+
+The active personality is stored in config and applied to every subsequent agent turn.
+
+## System Prompt Effect
+
+When a personality is active, the `SystemPromptBuilder` prepends the `system_prompt_prefix` to the constructed system prompt. For example, the `pirate` personality prepends:
+
+```
+Speak as a pirate. Use a rugged seafarer voice with occasional nautical phrasing.
+```
+
+The rest of the system prompt — skills, memories, platform hints, tool instructions — follows unchanged.
+
+## Personality Lookup
+
+Lookup is case-insensitive and trims whitespace:
+
+```rust
+// These are all equivalent
+get_personality("pirate")
+get_personality("PIRATE")
+get_personality("  Pirate ")
+```
+
+Returns `None` for unknown names. The agent falls back to `default` if the configured personality name is not recognized.
+
+## Example Responses
+
+The same prompt (`"What is 2 + 2?"`) with different personalities:
+
+- **default:** "2 + 2 = 4."
+- **pirate:** "Arrr, 'tis 4, matey! Ye can count on that with the stars above!"
+- **zen:** "Four."
+- **scientist:** "2 + 2 = 4. This follows from the Peano axioms of arithmetic."
+- **poet:** "Two sums meet two, and four blooms from their union."
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Static prefix over dynamic prompting.** Personalities are implemented as short, static string prefixes rather than dynamically generated instructions. This makes the system predictable — the prefix is the same on every turn, regardless of conversation history. Dynamic personality adaptation would require an additional LLM call and could drift in unexpected ways.
+
+**13 personalities as a starting set.** The set covers the most common tone preferences (professional, playful, technical, creative, minimal) without being overwhelming. Users rarely need more than a handful of personalities in practice.
+
+**Separate from system prompt content.** Personalities affect tone, not content. They do not modify skills, memories, or platform hints. This clean separation means a personality switch has no side effects on agent capability.
+
+**Case-insensitive lookup.** Config files and user input often have inconsistent casing. Normalizing to lowercase before lookup avoids frustrating mismatches.
+
+</Why>

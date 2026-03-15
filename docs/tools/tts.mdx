@@ -1,16 +1,69 @@
 ---
 title: "Text-to-Speech"
-description: "Text-to-speech synthesis"
+description: "Synthesize speech from text using edge-tts"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/tts.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="text_to_speech" module="builtins/tts.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does text_to_speech Do?
+
+`text_to_speech` converts text to a speech audio file using Microsoft's `edge-tts` command-line tool. The audio is written to the specified output path (typically an MP3 file). You can choose from any voice available through the Edge TTS service, control speaking rate, and the tool automatically creates parent directories for the output path if they don't exist.
+
+Requires `edge-tts` to be installed (`pip install edge-tts`).
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `text` | `string` | Yes | -- | The text to synthesize |
+| `output_path` | `string` | Yes | -- | File path for the generated audio (e.g. `/tmp/speech.mp3`) |
+| `voice` | `string` | No | `"en-US-AriaNeural"` | Voice identifier, e.g. `"en-GB-SoniaNeural"`, `"zh-CN-XiaoxiaoNeural"` |
+| `rate` | `string` | No | -- | Speaking rate adjustment, e.g. `"+20%"` or `"-10%"` |
+
+## Example
+
+```json
+{
+  "name": "text_to_speech",
+  "arguments": {
+    "text": "Hello! This is a test of the text-to-speech system.",
+    "output_path": "/tmp/greeting.mp3",
+    "voice": "en-US-GuyNeural",
+    "rate": "+10%"
+  }
+}
+```
+
+**Response:**
+```
+audio written to /tmp/greeting.mp3
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The tool invokes `edge-tts --text <text> --voice <voice> --write-media <output_path>` as a subprocess. If `edge-tts` is not found on PATH, the tool returns a `ToolError::ExecutionFailed` with the spawn error. If the process exits with a non-zero status, stderr is included in the error message.
+
+The `rate` parameter maps directly to edge-tts's `--rate` flag and accepts values like `"+20%"` or `"-10%"` relative to the default speech rate.
+
+The response metadata includes `voice` and `output_path` to make it easy to reference the file in subsequent tool calls (e.g., playing it or attaching it to a message).
+
+</Why>
+
+</ToolRef>

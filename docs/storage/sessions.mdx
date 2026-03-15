@@ -1,7 +1,9 @@
 ---
-title: "Session Store"
-description: "Sessions and messages"
+title: "SessionStore"
+description: "Session and message persistence with FTS5 search indexing"
 crate: genesis-storage
+source_files:
+  - crates/genesis-storage/src/lib.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +11,136 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+`SessionStore` persists conversation sessions and their messages. Each session belongs to a platform (`cli`, `telegram`, `slack`, `discord`, `whatsapp`, `homeassistant`, or `api`) and accumulates token counts as the conversation progresses. Messages are automatically indexed in the `session_search` FTS5 virtual table so session content is full-text searchable.
+
+**`sessions` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | Unique session identifier |
+| `title` | TEXT | Optional human-readable title |
+| `platform` | TEXT NOT NULL | Source platform |
+| `total_input_tokens` | INTEGER | Running sum of input tokens |
+| `total_output_tokens` | INTEGER | Running sum of output tokens |
+| `parent_session_id` | TEXT | Set when session is a fork |
+| `tags` | TEXT | Comma-separated tag list |
+| `created_at` | TEXT | ISO-8601 timestamp |
+| `updated_at` | TEXT | Touched on every message append |
+
+**`messages` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | Row order = chronological order |
+| `session_id` | TEXT NOT NULL | Foreign key to sessions (CASCADE DELETE) |
+| `role` | TEXT NOT NULL | `user`, `assistant`, `tool`, `system` |
+| `content` | TEXT | Text content (nullable for tool-only messages) |
+| `tool_call_id` | TEXT | Tool result correlation ID |
+| `tool_calls_json` | TEXT | JSON array of tool call entries |
+| `mirror` | INTEGER (bool) | 1 = delivery mirror record |
+| `mirror_source` | TEXT | Source label for mirrors (e.g., `cli`, `schedule`) |
+| `provider_metadata` | TEXT | Provider-specific blobs (e.g., Codex reasoning) |
+| `created_at` | TEXT | Defaults to CURRENT_TIMESTAMP |
 
 </What>
+
+<How>
+
+### Creating a session
+
+```rust
+let store = SessionStore::new(&database_path);
+store.create_session("tg-12345", "telegram", Some("Trip planning"))?;
+```
+
+Session IDs for platform sessions follow deterministic patterns: `tg-{chat_id}`, `slack-{channel_id}`, `discord-{channel_id}`, `wa-{phone}`, `ha-{chat_id}`. The helper `find_session_by_platform_chat_id(platform, chat_id)` reconstructs the ID and looks it up directly.
+
+### Appending messages
+
+```rust
+let msg_id = store.append_message(
+    "tg-12345",
+    "user",
+    Some("What is the weather in Paris?"),
+    None,  // tool_call_id
+    None,  // tool_calls_json
+    None,  // provider_metadata
+)?;
+```
+
+`append_message` does three things in sequence: inserts the row into `messages`, inserts non-empty content into `session_search` for FTS5 indexing, and updates `sessions.updated_at`.
+
+### Mirror messages
+
+Mirror messages record what the agent sent to another platform, giving cross-platform visibility:
+
+```rust
+store.append_mirror_message("tg-12345", "Reminder: stand-up in 10 min", "schedule")?;
+```
+
+Mirror messages are stored as `role = 'assistant'` with `mirror = 1` and are returned by `load_messages` in chronological order alongside regular messages.
+
+### Loading messages
+
+```rust
+let messages: Vec<StoredMessage> = store.load_messages("tg-12345")?;
+// Ordered by id ASC (insertion order = chronological order)
+```
+
+### Token tracking
+
+```rust
+store.add_usage("tg-12345", 1500, 400)?;
+// No-op when both counts are zero — avoids unnecessary writes
+```
+
+Token counts accumulate with `UPDATE ... SET total_input_tokens = total_input_tokens + ?`, avoiding any read-modify-write race condition.
+
+### Searching sessions
+
+```rust
+let results: Vec<SessionSummary> = store.search_sessions("weather Paris")?;
+// Ordered by FTS5 rank (best match first)
+```
+
+Uses `session_search MATCH ?` with a JOIN back to `sessions`. See [FTS5](./fts5) for supported query syntax.
+
+### Forking sessions
+
+```rust
+let new_id = store.fork_session("tg-12345", "tg-12345-fork-1")?;
+```
+
+Fork copies all messages from the source into the new session and sets `parent_session_id`. The new session title is `"{original title} (fork)"`. Use `list_children(parent_id)` to enumerate all forks.
+
+### Purging old sessions
+
+```rust
+let deleted = store.purge_older_than(30)?; // sessions older than 30 days
+```
+
+Runs in a transaction: deletes `session_search` entries first (virtual table, no FK cascade), then deletes sessions and relies on ON DELETE CASCADE for messages.
+
+### Usage insights
+
+```rust
+let stats = store.usage_stats()?;
+// stats.total_sessions, total_input_tokens, total_output_tokens
+
+let insights = store.insights(30)?;
+// sessions_per_day, platform_breakdown, tokens_per_day, tool_usage
+```
+
+The `insights()` method also extracts `tool_usage` by parsing `tool_calls_json` in assistant messages and counting each tool name.
+
+</How>
+
+<Why>
+
+**Integer primary key on messages.** Using `INTEGER PRIMARY KEY AUTOINCREMENT` on `messages` means row insertion order equals the chronological order returned by `load_messages` — no ambiguity from same-second timestamps.
+
+**Separate FTS5 virtual table.** Storing searchable content in `session_search` rather than adding a generated column or full-table scan keeps FTS5's tokenizer working on plain text, avoids indexing JSON-only tool messages, and allows the virtual table to be managed independently for operations like deletion.
+
+**Mirror messages.** Recording what the agent dispatched to external platforms as assistant messages in the same transcript gives the agent a consistent conversation view regardless of which platform it responds on next.
+
+</Why>

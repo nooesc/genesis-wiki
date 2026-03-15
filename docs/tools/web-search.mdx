@@ -1,16 +1,71 @@
 ---
 title: "Web Search"
-description: "Web search wrapper"
+description: "Web search via Brave or DuckDuckGo"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/web_search.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="web_search" module="builtins/web_search.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does web_search Do?
+
+`web_search` searches the web for a query and returns a numbered list of results with titles, URLs, and descriptions. When the `BRAVE_API_KEY` environment variable is set, it uses the Brave Search API for full web results. Without an API key it falls back to the DuckDuckGo Instant Answer API, which provides a limited set of results for well-known topics but may return no results for obscure queries.
+
+Results are capped at 10 and default to 5.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | `string` | Yes | -- | The search query (cannot be empty or whitespace-only) |
+| `count` | `string` | No | `"5"` | Number of results to return (max 10) |
+
+## Example
+
+```json
+{
+  "name": "web_search",
+  "arguments": {
+    "query": "Rust async runtime comparison tokio vs async-std",
+    "count": "5"
+  }
+}
+```
+
+**Response:**
+```
+Search results for: Rust async runtime comparison tokio vs async-std
+
+1. Choosing an Async Runtime in Rust
+   https://example.com/rust-async-runtimes
+   A comparison of Tokio, async-std, and smol for production Rust applications.
+
+2. ...
+```
+
+</How>
+
+<Why>
+
+## Brave vs DuckDuckGo
+
+The Brave Search API (`api.search.brave.com/res/v1/web/search`) returns full web search results including descriptions, and is the recommended backend for most queries. Configure it by setting `BRAVE_API_KEY`.
+
+The DuckDuckGo fallback uses the Instant Answer API (`api.duckduckgo.com/?format=json`), which only returns structured "instant answers" (Wikipedia summaries and related topic links) rather than a traditional list of search results. For many queries this API returns nothing useful; the tool notes this in the response and suggests using `web_request` to fetch a specific URL directly.
+
+Both backends use a shared `reqwest::blocking::Client` with a 15-second timeout.
+
+</Why>
+
+</ToolRef>

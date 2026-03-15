@@ -1,16 +1,103 @@
 ---
 title: "Scheduler"
-description: "Cron job runtime"
+description: "Background cron job runtime for scheduled agent prompts"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/scheduler.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Scheduler?
+
+The scheduler is a background Tokio task that runs inside the genesis gateway (`genesis serve`). It polls every minute, checks which stored schedules are due at the current time, and executes their prompts through the agent.
+
+Each schedule has a standard 5-field cron expression, a destination (e.g., a Telegram chat ID or API session ID), and a prompt. When a schedule fires, the `ScheduleExecutor` trait implementation runs the prompt via `SessionExecutionService` and routes the response to the destination.
+
+Schedules are stored in SQLite (`schedules` table) with an `enabled` flag. They can be managed via the gateway API or CLI at runtime without restarting the server.
 
 </What>
+
+<How>
+
+## Cron Syntax
+
+The scheduler supports standard 5-field cron: `minute hour day-of-month month day-of-week`.
+
+| Field syntax | Example | Meaning |
+|-------------|---------|---------|
+| `*` | `* * * * *` | Every minute |
+| `N` | `30 8 * * *` | 8:30 AM every day |
+| `*/N` | `*/15 * * * *` | Every 15 minutes |
+| `N-M` | `0 9-17 * * 1-5` | Every hour from 9am–5pm, Mon–Fri |
+| `N,M,P` | `0 8,12,18 * * *` | At 8am, 12pm, and 6pm |
+| Combined | `0 9 1,15 * *` | 9am on the 1st and 15th of each month |
+
+## Managing Schedules
+
+**Via API:**
+```bash
+# Create a schedule
+curl -X POST http://localhost:8080/schedules \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "morning-briefing",
+    "cron_expression": "0 8 * * 1-5",
+    "destination": "tg-123456789",
+    "prompt": "Give me a brief weather and news summary for today"
+  }'
+
+# List schedules
+curl http://localhost:8080/schedules
+
+# Enable/disable
+curl -X PATCH http://localhost:8080/schedules/morning-briefing/enabled \
+  -d '{"enabled": false}'
+
+# Delete
+curl -X DELETE http://localhost:8080/schedules/morning-briefing
+```
+
+**Via CLI:**
+```bash
+genesis schedule list
+genesis schedule create --id daily-summary --cron "0 9 * * *" \
+  --destination tg-123456789 \
+  --prompt "Summarize my tasks for today"
+genesis schedule enable daily-summary
+genesis schedule disable daily-summary
+genesis schedule delete daily-summary
+```
+
+## Schedule Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier |
+| `cron_expression` | string | 5-field cron expression |
+| `destination` | string | Target for the response (session ID, chat ID, etc.) |
+| `prompt` | string | The prompt to send to the agent when the schedule fires |
+| `enabled` | bool | Whether the schedule is active |
+
+## Gateway Health
+
+The `GET /health` endpoint includes an `active_schedules` count reflecting the number of enabled schedules.
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Minute-resolution polling.** Cron expressions have minute precision. Polling every 60 seconds is the standard approach and avoids the complexity of computing exact next-fire times and sleeping until them (which would require resynchronization after server restarts or timezone changes).
+
+**`ScheduleExecutor` trait.** The scheduler runtime is decoupled from `SessionExecutionService` via a trait. This enables testing with mock executors and allows the scheduler to be used in contexts outside the gateway without pulling in the full execution stack.
+
+**Schedules with unparseable cron expressions are silently skipped.** When `check_due_schedules` encounters an invalid expression, it skips that schedule rather than panicking or stopping the scheduler loop. This is important for robustness: a broken schedule should not prevent all other schedules from firing.
+
+**SQLite persistence.** Schedules survive server restarts because they are stored in the same SQLite database as all other Genesis data. No separate scheduler state store is needed.
+
+</Why>

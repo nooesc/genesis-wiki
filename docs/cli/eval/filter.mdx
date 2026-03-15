@@ -1,13 +1,68 @@
 ---
 title: "eval filter"
-description: "Filter trajectories by criteria"
-last_synced_commit: "0000000"
+description: "Filter trajectories by criteria and copy matching files to output"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval filter" usage="genesis eval filter <DIR> --output <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval filter`?
+
+The `filter` command copies trajectory files that match a set of criteria from a source directory into an output directory. It is the primary tool for curating a training dataset from a larger raw collection: you can select by model, tag, quality score range, outcome, step count range, and tool usage. Only matching files are copied — the source directory is never modified. All filter flags are additive (AND logic), so combining them narrows the selection further.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Source directory containing trajectory JSON files |
+| `--output <DIR>` | `string` | Yes | Output directory for matching trajectories |
+| `--recursive` | `bool` | No | Recursively scan nested directories |
+| `--model <MODEL>` | `string` | No | Only include trajectories for this model |
+| `--tag <TAG>` | `string` | No | Only include trajectories with this tag |
+| `--min-quality <SCORE>` | `f64` | No | Minimum quality score (0.0–1.0) |
+| `--max-quality <SCORE>` | `f64` | No | Maximum quality score (0.0–1.0) |
+| `--success-only` | `bool` | No | Only include successful trajectories |
+| `--failure-only` | `bool` | No | Only include failed trajectories |
+| `--min-steps <N>` | `usize` | No | Minimum number of steps |
+| `--max-steps <N>` | `usize` | No | Maximum number of steps |
+| `--tool <TOOL>` | `string` | No | Only include trajectories that used this tool |
+
+## Examples
+
+```bash
+# Copy successful trajectories scoring 0.7+ to a curated dataset
+genesis eval filter ./raw --output ./curated --success-only --min-quality 0.7
+
+# Filter to a specific model and tag
+genesis eval filter ./raw --output ./gpt4-shell --model gpt-4.1 --tag shell
+
+# Keep only trajectories between 5 and 20 steps
+genesis eval filter ./raw --output ./medium --min-steps 5 --max-steps 20
+
+# Select trajectories that used the git tools and succeeded
+genesis eval filter ./raw --output ./git-tasks --tool git_commit --success-only
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+`filter` performs a non-destructive copy: source files are never deleted or modified. The output directory is created if it does not exist. Quality scoring uses the same `genesis_core::quality::score` function as `eval quality`, so `--min-quality` and `--max-quality` are consistent with scores you see in `eval quality` output. When `--success-only` and `--failure-only` are both absent, both outcomes are included. Specifying both simultaneously is an error.
+
+</Why>
+
+</CliCommand>

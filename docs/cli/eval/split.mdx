@@ -1,13 +1,59 @@
 ---
 title: "eval split"
-description: "Train/test split"
-last_synced_commit: "0000000"
+description: "Split a trajectory directory into train/test sets"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval split" usage="genesis eval split <DIR> --train <DIR> --test <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval split`?
+
+The `split` command divides a trajectory directory into separate train and test sets by copying files into two output directories. The split ratio is configurable (default 80% train / 20% test). A random seed can be provided for reproducibility. This is typically the last step in preparing a training dataset — after filtering and quality scoring, you split the curated set into train and test before fine-tuning.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Source directory containing trajectory JSON files |
+| `--train <DIR>` | `string` | Yes | Output directory for the train set |
+| `--test <DIR>` | `string` | Yes | Output directory for the test set |
+| `--ratio <RATIO>` | `f64` | No | Fraction of data for training, 0.0–1.0 (default: `0.8`) |
+| `--seed <SEED>` | `u64` | No | Random seed for reproducibility |
+| `--recursive` | `bool` | No | Recursively scan nested directories |
+
+## Examples
+
+```bash
+# Default 80/20 split
+genesis eval split ./curated --train ./train --test ./test
+
+# 90/10 split with a fixed seed
+genesis eval split ./curated --train ./train --test ./test --ratio 0.9 --seed 42
+
+# Reproducible split from nested directories
+genesis eval split ./curated --train ./train --test ./test --recursive --seed 123
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Files are shuffled using a deterministic random number generator seeded by `--seed`. Without `--seed`, the shuffle uses a random seed and is not reproducible across runs. The split is performed at the file level: each trajectory file is independently assigned to train or test based on the ratio. Files are copied (not moved), so the source directory is preserved. Both output directories are created if they do not exist.
+
+</Why>
+
+</CliCommand>

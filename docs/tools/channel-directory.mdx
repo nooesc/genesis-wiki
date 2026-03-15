@@ -1,16 +1,86 @@
 ---
 title: "Channel Directory"
-description: "Messaging channel discovery"
+description: "Discover and cache available messaging channels across configured platforms"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/channel_directory.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="list_channels" module="builtins/channel_directory.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Discovers and returns all available channels across configured messaging platforms. Results are cached in SQLite with a 5-minute TTL, so repeated calls within the TTL window are instant reads from the local cache rather than live API calls.
+
+When called with no arguments, it queries every platform that has API credentials configured. When called with a `platform` argument, only that platform is queried. The `refresh` flag forces a cache bypass and re-fetches live data even if the cache is still fresh.
+
+Output is grouped by platform and includes channel ID, name, type, and whether the bot is a member.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `platform` | `string` | No | All configured | Filter to a single platform: `slack`, `telegram`, `discord`, `whatsapp`, `homeassistant` |
+| `refresh` | `string` | No | `"false"` | Set to `"true"` to bypass the cache and fetch live data |
+
+### Required Credentials by Platform
+
+| Platform | Required env var(s) |
+|----------|---------------------|
+| Slack | `SLACK_BOT_TOKEN` |
+| Telegram | `TELEGRAM_BOT_TOKEN` (returns empty list; Telegram bots cannot list chats) |
+| Discord | `DISCORD_BOT_TOKEN` |
+| WhatsApp | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` |
+| Home Assistant | `HOMEASSISTANT_URL`, `HOMEASSISTANT_LONG_LIVED_TOKEN` |
+
+## Example
+
+```json
+{
+  "name": "list_channels",
+  "arguments": { "platform": "slack" }
+}
+```
+
+**Response:**
+```
+## Slack
+- general (id: C0123456789, type: channel) [member]
+- random (id: C9876543210, type: channel) [member]
+- #design-team (id: C1111111111, type: private)
+```
+
+## Example: Refresh all platforms
+
+```json
+{
+  "name": "list_channels",
+  "arguments": { "refresh": "true" }
+}
+```
+
+</How>
+
+<Why>
+
+**Platform-specific behaviors:**
+
+- **Slack**: Paginates through `conversations.list` (all types: public, private, DMs, group DMs) using cursor-based pagination.
+- **Telegram**: Returns an empty list. The Telegram Bot API does not expose a channel/chat listing endpoint — bots can only respond to messages sent to them. Use the Telegram chat ID from an incoming message instead.
+- **Discord**: First fetches the bot's guilds, then fetches channels for each guild. Channel types 0 (text), 2 (voice), 5 (announcement), and 15 (forum) are included; categories and other non-message types are skipped.
+- **WhatsApp**: Returns a single entry representing the configured business phone number ID. Actual recipients must be specified by phone number when sending.
+- **Home Assistant**: Queries `/api/services` and returns all `notify.*` services as channel entries.
+
+The 5-minute cache TTL (`CACHE_TTL_SECS = 300`) avoids hammering platform APIs during active agent sessions while still reflecting channel changes made within a reasonable window.
+
+</Why>
+
+</ToolRef>

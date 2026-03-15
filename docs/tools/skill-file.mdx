@@ -1,16 +1,195 @@
 ---
 title: "Skill File"
-description: "Skill file management"
+description: "Store and retrieve supporting files attached to skills"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/skill_file.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="skill_store_file" module="builtins/skill_file.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does skill_store_file Do?
+
+`skill_store_file` attaches a named file to a skill in the database. Supporting files let a skill carry reference material alongside its instructions — API documentation, template files, example configurations, checklists, or any other text content that the skill's instructions might reference. Files are stored by a path-style key (e.g., `"references/api.md"`) and can be overwritten by calling the tool again with the same path.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `skill_name` | `string` | Yes | Name of the skill to attach the file to |
+| `file_path` | `string` | Yes | Path-style key for the file (e.g., `"docs/setup.md"`) |
+| `content` | `string` | Yes | Text content of the file |
+
+## Example
+
+```json
+{
+  "name": "skill_store_file",
+  "arguments": {
+    "skill_name": "deploy_app",
+    "file_path": "references/deployment-checklist.md",
+    "content": "# Deployment Checklist\n- [ ] Run tests\n- [ ] Build release binary\n- [ ] Update .env\n- [ ] Restart service"
+  }
+}
+```
+
+**Response:**
+```
+Stored file `references/deployment-checklist.md` for skill `deploy_app`.
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Files are stored via `SkillFileStore::store_file`, which performs an upsert in the `skill_files` SQLite table keyed on `(skill_name, file_path)`. The path-style keys allow logical grouping (e.g., `references/`, `templates/`, `examples/`) without creating actual filesystem hierarchy. The `bootstrap` call before opening the store ensures the schema exists.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="skill_view_file" module="builtins/skill_file.rs" crate="genesis-tools">
+
+<What>
+
+## What Does skill_view_file Do?
+
+`skill_view_file` retrieves the content of a supporting file attached to a skill. Returns the raw file content, or an error if the skill or file path does not exist.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `skill_name` | `string` | Yes | Name of the skill |
+| `file_path` | `string` | Yes | Path key of the file to retrieve |
+
+## Example
+
+```json
+{
+  "name": "skill_view_file",
+  "arguments": {
+    "skill_name": "deploy_app",
+    "file_path": "references/deployment-checklist.md"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Uses `SkillFileStore::get_file`, which returns `Option<String>`. A `None` result (file not found) is converted to a `ToolError::ExecutionFailed` with a descriptive message including both the skill name and file path.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="skill_list_files" module="builtins/skill_file.rs" crate="genesis-tools">
+
+<What>
+
+## What Does skill_list_files Do?
+
+`skill_list_files` returns the list of file path keys attached to a skill. If no files are attached, it returns a "no supporting files" message. The `file_count` metadata field holds the count.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `skill_name` | `string` | Yes | Name of the skill to list files for |
+
+## Example
+
+```json
+{
+  "name": "skill_list_files",
+  "arguments": {
+    "skill_name": "deploy_app"
+  }
+}
+```
+
+**Response:**
+```
+Supporting files for `deploy_app`:
+  - references/deployment-checklist.md
+  - templates/env.template
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Uses `SkillFileStore::list_files`, which returns only the path keys — not the content — keeping the response compact. Content is retrieved separately with `skill_view_file`.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="skill_delete_file" module="builtins/skill_file.rs" crate="genesis-tools">
+
+<What>
+
+## What Does skill_delete_file Do?
+
+`skill_delete_file` removes a supporting file from a skill. If the file does not exist, it returns a "not found" message rather than an error, making the operation idempotent. The `deleted` metadata field is `"true"` or `"false"` accordingly.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `skill_name` | `string` | Yes | Name of the skill |
+| `file_path` | `string` | Yes | Path key of the file to remove |
+
+## Example
+
+```json
+{
+  "name": "skill_delete_file",
+  "arguments": {
+    "skill_name": "deploy_app",
+    "file_path": "references/old-notes.md"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Uses `SkillFileStore::delete_file`, which returns a boolean. The tool treats "not found" as a non-error to allow idempotent cleanup in agent workflows.
+
+</Why>
+
+</ToolRef>

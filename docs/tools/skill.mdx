@@ -1,16 +1,235 @@
 ---
 title: "Skill"
-description: "Skill CRUD"
+description: "Create, list, retrieve, delete, and record usage of skills"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/skill.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="skill_create" module="builtins/skill.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does skill_create Do?
+
+`skill_create` saves a reusable procedure as a named skill in the database. Skills contain a description, step-by-step instructions, an optional trigger hint (a phrase that should prompt their use), and optional comma-separated tags. If a skill with the same name already exists, calling `skill_create` again updates it and auto-increments the version number.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | `string` | Yes | Unique skill name (slug-style, e.g. `deploy_app`) |
+| `description` | `string` | Yes | Short description of what the skill does |
+| `instructions` | `string` | Yes | Full step-by-step instructions |
+| `trigger_hint` | `string` | No | Phrase that should trigger use of this skill |
+| `tags` | `string` | No | Comma-separated tags, e.g. `"dev, deploy, k8s"` |
+
+## Example
+
+```json
+{
+  "name": "skill_create",
+  "arguments": {
+    "name": "run_tests",
+    "description": "Run the full test suite and summarize results",
+    "instructions": "1. Run `cargo test --workspace`\n2. Parse the output for failures\n3. Report counts and any failing test names.",
+    "trigger_hint": "run tests",
+    "tags": "dev, rust, testing"
+  }
+}
+```
+
+**Response:**
+```
+Skill `run_tests` saved (version 1). Tags: [dev, rust, testing]
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Skills are stored via `SkillStore::upsert`, which uses an SQL `INSERT OR REPLACE` with an auto-incrementing version. Tags are parsed from a comma-separated string via `split(',').map(str::trim)`. The `bootstrap` call before opening the store is idempotent — it creates the database schema only if it does not already exist.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="skill_list" module="builtins/skill.rs" crate="genesis-tools">
+
+<What>
+
+## What Does skill_list Do?
+
+`skill_list` returns a formatted list of all saved skills, showing name, version, tags, and description. If no skills exist, it returns `"No skills saved yet."`.
+
+</What>
+
+<How>
+
+## Parameters
+
+None.
+
+## Example
+
+```json
+{
+  "name": "skill_list",
+  "arguments": {}
+}
+```
+
+**Response:**
+```
+- run_tests (v1) [dev, rust, testing]: Run the full test suite and summarize results
+- deploy_app (v3) [dev, deploy]: Deploy the application to production
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Uses `SkillStore::list_all()`, which returns all skills ordered by name. The `count` field in metadata reports the total number of skills.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="skill_get" module="builtins/skill.rs" crate="genesis-tools">
+
+<What>
+
+## What Does skill_get Do?
+
+`skill_get` retrieves the full content of a named skill, including description, trigger hint, tags, version, and complete instructions formatted as Markdown. Returns an error if the skill does not exist.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | `string` | Yes | Name of the skill to retrieve |
+
+## Example
+
+```json
+{
+  "name": "skill_get",
+  "arguments": {
+    "name": "run_tests"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The response is formatted as Markdown with a heading, bold metadata fields, and the instructions under a `## Instructions` section. This makes the output readable both in terminal output and when injected into the system prompt.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="skill_delete" module="builtins/skill.rs" crate="genesis-tools">
+
+<What>
+
+## What Does skill_delete Do?
+
+`skill_delete` removes a named skill from the database. If the skill does not exist, the tool returns a "not found" message rather than an error, so the operation is idempotent.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | `string` | Yes | Name of the skill to delete |
+
+## Example
+
+```json
+{
+  "name": "skill_delete",
+  "arguments": {
+    "name": "old_deploy_script"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Uses `SkillStore::delete`, which returns a boolean indicating whether a row was actually deleted. The tool surface treats "not found" as a success (no error) to allow idempotent cleanup in agent loops.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="skill_record_usage" module="builtins/skill.rs" crate="genesis-tools">
+
+<What>
+
+## What Does skill_record_usage Do?
+
+`skill_record_usage` records the outcome of using a skill, enabling the agent to track which skills work reliably and which need refinement. After recording, the response includes lifetime statistics (total uses, successes, failures, times refined). If the outcome is not `"success"`, the response suggests calling `skill_create` to update the skill's instructions.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `skill_name` | `string` | Yes | Name of the skill that was used |
+| `outcome` | `string` | Yes | Result of using the skill: `"success"`, `"partial"`, `"failure"`, or `"unknown"` |
+| `feedback` | `string` | No | Optional notes on what worked or what went wrong |
+
+## Example
+
+```json
+{
+  "name": "skill_record_usage",
+  "arguments": {
+    "skill_name": "run_tests",
+    "outcome": "partial",
+    "feedback": "Tests passed but the summary step failed because the output format changed"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The `outcome` value is validated against the four allowed strings before any database access. The skill is looked up first to confirm it exists — recording usage for a non-existent skill returns an error. Usage stats are fetched from `SkillUsageStore::stats` immediately after recording and included in the response for immediate feedback.
+
+</Why>
+
+</ToolRef>

@@ -1,16 +1,82 @@
 ---
 title: "SSH"
-description: "SSH command execution"
+description: "Run commands on a remote host via SSH"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/ssh.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="ssh_exec" module="builtins/ssh.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Runs a command on a remote host over SSH. The command is passed directly to the remote shell, so shell features (pipes, redirects, variable expansion) all work. Output is captured and returned, truncated to 64 KiB if needed.
+
+The tool sets `StrictHostKeyChecking=accept-new` so that new hosts are automatically added to `~/.ssh/known_hosts` without prompting, and `ConnectTimeout=10` to prevent hanging on unreachable hosts.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `host` | `string` | Yes | Remote hostname or IP address |
+| `command` | `string` | Yes | Command to run on the remote host |
+| `user` | `string` | No | SSH username (omit to use the current user or SSH config) |
+| `port` | `string` | No | SSH port (omit to use the default port 22) |
+| `identity_file` | `string` | No | Path to a specific SSH private key file (`-i` flag) |
+
+## Example: Simple command
+
+```json
+{
+  "name": "ssh_exec",
+  "arguments": {
+    "host": "prod-server.example.com",
+    "user": "deploy",
+    "command": "systemctl status myapp"
+  }
+}
+```
+
+**Response:**
+```
+● myapp.service - My Application
+   Loaded: loaded (/etc/systemd/system/myapp.service; enabled)
+   Active: active (running) since Mon 2026-03-15 09:00:00 UTC
+```
+
+## Example: Custom port and identity file
+
+```json
+{
+  "name": "ssh_exec",
+  "arguments": {
+    "host": "192.168.1.100",
+    "user": "admin",
+    "port": "2222",
+    "identity_file": "/home/user/.ssh/deploy_key",
+    "command": "df -h && free -m"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+**`accept-new` vs `no`:** `StrictHostKeyChecking=accept-new` is chosen over `no` because `no` silently accepts changed host keys (potential MITM), while `accept-new` only auto-accepts hosts not previously seen. For hosts where the key has changed and you expect that (e.g. after OS reinstall), remove the old entry from `known_hosts` manually before using this tool.
+
+**`ConnectTimeout=10`:** Without an explicit connect timeout, SSH will wait for the OS TCP timeout (often minutes) on unreachable hosts. 10 seconds is a reasonable balance between giving slow networks time to respond and not blocking the agent loop indefinitely.
+
+**No pseudo-TTY:** The tool does not pass `-t` (allocate pseudo-TTY), which means interactive programs like `vim` or `sudo` prompts will not work correctly. Use this tool for non-interactive commands only.
+
+</Why>
+
+</ToolRef>

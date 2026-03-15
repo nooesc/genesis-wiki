@@ -1,16 +1,86 @@
 ---
 title: "Patch"
-description: "File patching"
+description: "Targeted find-and-replace file editing"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/patch.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="patch" module="builtins/patch.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does patch Do?
+
+`patch` performs a targeted find-and-replace on a file. Provide the exact text you want replaced (`old_text`) and what to replace it with (`new_text`). The tool first tries an exact string match. If the exact match is not found, it falls back to a line-based fuzzy matcher that handles minor whitespace differences and stale model views of a file.
+
+If `old_text` matches more than once, the tool returns an error asking for more surrounding context — unless `replace_all=true` is set, in which case every occurrence is replaced. The response reports bytes before and after, and whether the match was exact or fuzzy.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `path` | `string` | Yes | -- | Path to the file to patch |
+| `old_text` | `string` | Yes | -- | The exact (or approximately exact) text to find and replace |
+| `new_text` | `string` | Yes | -- | The text to substitute in its place |
+| `replace_all` | `string` | No | `"false"` | Set `"true"` to replace every occurrence of `old_text` |
+
+## Example: Single replacement
+
+```json
+{
+  "name": "patch",
+  "arguments": {
+    "path": "/home/user/project/src/config.rs",
+    "old_text": "const TIMEOUT: u64 = 30;",
+    "new_text": "const TIMEOUT: u64 = 60;"
+  }
+}
+```
+
+**Response:**
+```
+patched `/home/user/project/src/config.rs`: 1 replacement(s) applied (4218 bytes → 4218 bytes)
+```
+
+## Example: Replace all occurrences
+
+```json
+{
+  "name": "patch",
+  "arguments": {
+    "path": "/home/user/project/src/lib.rs",
+    "old_text": "old_function_name",
+    "new_text": "new_function_name",
+    "replace_all": "true"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## The Fuzzy Matching Engine
+
+When an exact match fails, the tool runs a line-based sliding window search across the file. The window size matches the line count of `old_text`, with ±1 and ±2 line variants also tested to handle insertions and deletions.
+
+Each candidate window is scored using `line_block_similarity`, which uses Levenshtein distance on trimmed line pairs with an indentation penalty. A window must reach a 70% similarity threshold to be accepted. When a fuzzy match is used, the response includes the similarity percentage and a line-by-line diff hint showing exactly where the expected and matched text diverged.
+
+This design handles the most common LLM editing failure: the model's view of a file goes slightly stale (whitespace changes, minor edits by another tool) between when it read the file and when it attempts to patch it.
+
+## Why Require Unique Matches?
+
+Allowing ambiguous matches would silently edit the wrong location. The error message for multiple matches explicitly says to "provide more surrounding context" — the standard fix is to include a few lines of context before and after the target text in `old_text`.
+
+</Why>
+
+</ToolRef>

@@ -1,13 +1,58 @@
 ---
 title: "eval manifest"
-description: "Dataset manifest management"
-last_synced_commit: "0000000"
+description: "Build or show a dataset manifest (dataset.json) for a trajectory directory"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval manifest" usage="genesis eval manifest <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval manifest`?
+
+The `manifest` command builds a `dataset.json` metadata file for a trajectory directory, or prints the manifest content to stdout if `--save` is not provided. The manifest records the dataset name, description, total trajectory count, success/failure counts, creation timestamp, and a list of included files. It serves as a lightweight provenance record for a curated dataset — useful when sharing datasets or tracking which version of a dataset was used for a training run.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Directory containing trajectory JSON files |
+| `--name <NAME>` | `string` | No | Dataset name |
+| `--description <DESC>` | `string` | No | Dataset description |
+| `--save` | `bool` | No | Write the manifest to `dataset.json` in the directory |
+| `--recursive` | `bool` | No | Recursively scan nested directories |
+
+## Examples
+
+```bash
+# Preview the manifest for a dataset without writing
+genesis eval manifest ./curated --name "my-dataset" --description "Curated shell trajectories"
+
+# Write dataset.json to the directory
+genesis eval manifest ./curated --name "my-dataset" --save
+
+# Build a recursive manifest
+genesis eval manifest ./curated --recursive --name "full-dataset" --save
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The manifest is written as a single `dataset.json` file at the root of the specified directory. It includes a `files` array listing every trajectory filename included in the manifest, which makes it easy to reproduce the exact dataset later. The `eval pipeline` command can build a manifest automatically at the end of its pipeline via `--manifest`. If `dataset.json` already exists in the directory, running `manifest --save` overwrites it.
+
+</Why>
+
+</CliCommand>

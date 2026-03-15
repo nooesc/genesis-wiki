@@ -1,14 +1,104 @@
 ---
 title: "genesis eval"
-description: "Evaluation suite overview"
+description: "Inspect, process, and export agent trajectory datasets"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-core/src/replay.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval" usage="genesis eval <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval`?
+
+The `eval` command group is Genesis's trajectory dataset management toolkit. Trajectories are JSON files produced by `genesis batch` — each one records a full agent run: the prompt, system message, every tool call and its output, model metadata, tags, and a success/failure outcome.
+
+`genesis eval` gives you everything you need to work with these files: inspect individual trajectories, aggregate statistics across a directory, filter by quality or tags, convert to training formats, find duplicates, split into train/test sets, and run a full processing pipeline in a single command.
+
+## Sub-commands at a Glance
+
+| Sub-command | Description |
+|-------------|-------------|
+| [`eval report`](./eval/report) | Build a replay report for one trajectory file |
+| [`eval summarize`](./eval/summarize) | Aggregate reports across a directory |
+| [`eval compare`](./eval/compare) | Compare two trajectory reports |
+| [`eval stats`](./eval/stats) | Compute dataset statistics |
+| [`eval quality`](./eval/quality) | Score trajectory quality for filtering |
+| [`eval auto-tag`](./eval/auto-tag) | Automatically tag trajectories by content |
+| [`eval tag-stats`](./eval/tag-stats) | Show tag frequency distribution |
+| [`eval filter`](./eval/filter) | Copy matching trajectories to an output directory |
+| [`eval deduplicate`](./eval/deduplicate) | Find and remove near-duplicate trajectories |
+| [`eval split`](./eval/split) | Split a dataset into train/test sets |
+| [`eval sample`](./eval/sample) | Random sample of trajectories |
+| [`eval merge`](./eval/merge) | Merge multiple directories into one |
+| [`eval export-chatml`](./eval/export-chatml) | Export as ChatML JSONL |
+| [`eval export-sharegpt`](./eval/export-sharegpt) | Export as ShareGPT JSONL |
+| [`eval import-chatml`](./eval/import-chatml) | Import ChatML JSONL as trajectory files |
+| [`eval import-sharegpt`](./eval/import-sharegpt) | Import ShareGPT JSONL as trajectory files |
+| [`eval convert`](./eval/convert) | Convert between JSON, ChatML, and ShareGPT formats |
+| [`eval validate`](./eval/validate) | Validate trajectory files for structural integrity |
+| [`eval manifest`](./eval/manifest) | Build or show a dataset manifest |
+| [`eval pipeline`](./eval/pipeline) | Run a full validate → tag → filter → export pipeline |
 
 </What>
+
+<How>
+
+## Common Workflow
+
+A typical trajectory dataset workflow looks like this:
+
+```bash
+# 1. Generate trajectories
+genesis batch --input prompts.jsonl --output ./trajectories/ --auto-tag
+
+# 2. Inspect the dataset
+genesis eval stats ./trajectories/
+genesis eval quality ./trajectories/ --min-score 0.6
+
+# 3. Filter to high-quality successes
+genesis eval filter ./trajectories/ --output ./filtered/ --min-quality 0.7 --success-only
+
+# 4. Deduplicate
+genesis eval deduplicate ./filtered/ --remove
+
+# 5. Split into train/test
+genesis eval split ./filtered/ --train ./train/ --test ./test/ --ratio 0.85
+
+# 6. Export for fine-tuning
+genesis eval export-chatml ./train/ --output train.jsonl
+```
+
+Or use the `pipeline` sub-command to run steps 3–6 in one invocation:
+
+```bash
+genesis eval pipeline ./trajectories/ --output ./ready/ \
+  --validate --auto-tag --min-quality 0.7 --success-only \
+  --format chatml --manifest
+```
+
+## Global Flags
+
+All `eval` sub-commands respect the top-level `--json` flag for machine-readable output, and most accept `--recursive` to scan nested subdirectories.
+
+</How>
+
+<Why>
+
+## Why a Separate Eval Toolkit?
+
+The `eval` command group exists because training data curation is a distinct workflow from running the agent. Generating trajectories with `genesis batch` is fast; curating them — filtering noise, removing duplicates, balancing tags, splitting datasets — requires a different set of primitives.
+
+Rather than piping `jq` invocations together, `eval` provides typed, tested operations that understand trajectory structure. Each sub-command reads and writes the same JSON format, so they compose naturally. The `pipeline` sub-command is the integrated path for users who want a reproducible, single-command dataset preparation step.
+
+The quality scorer uses six dimensions (tool diversity, response length, success rate, turn efficiency, instruction following, error recovery) to assign a 0–1 score to each trajectory. This score is the primary filter for separating high-quality training examples from noise generated by exploratory or failed runs.
+
+</Why>
+
+</CliCommand>

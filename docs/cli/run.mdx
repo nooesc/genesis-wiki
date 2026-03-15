@@ -1,14 +1,99 @@
 ---
 title: "genesis run"
-description: "One-shot prompt execution"
+description: "Run a single prompt non-interactively"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="run" usage="genesis run <PROMPT> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis run`?
+
+The `run` command sends a single prompt to Eve and exits. It is the non-interactive counterpart to `chat` — useful in shell scripts, CI pipelines, Makefiles, and anywhere you want to automate a one-off task without entering a conversation loop.
+
+You supply the prompt as a positional argument. Eve processes it through the full agent loop (including tool calls, file access, and web searches), then prints the response and returns. There is no interactive prompt afterwards.
+
+The command supports streaming so you can see output as it arrives, image attachments for multimodal prompts, and optional session persistence so the response is saved to SQLite for later review with `genesis sessions show`.
 
 </What>
+
+<How>
+
+## Options
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `<PROMPT>` | `string` | **(required)** The prompt to send to the agent |
+| `--session-id <ID>` | `string` | Session ID to use; creates a new session if not found |
+| `--raw` | `bool` | Print the response text only, without metadata headers |
+| `--system <TEXT>` | `string` | Override the system prompt / agent identity |
+| `--stream` | `bool` | Stream output as it arrives instead of waiting for the full response |
+| `-i, --image <PATH_OR_URL>` | `string` | Attach an image file or URL to the prompt (repeatable) |
+
+## Examples
+
+**Simple one-liner:**
+```bash
+genesis run "What is the capital of France?"
+```
+
+**Stream output as it arrives:**
+```bash
+genesis run --stream "Summarise the README in 3 bullet points"
+```
+
+**Attach an image:**
+```bash
+genesis run -i screenshot.png "What's wrong with this UI?"
+```
+
+**Pipe output into another tool:**
+```bash
+genesis run --raw "List the 5 most important TODOs in this project" | pbcopy
+```
+
+**Use a custom system prompt:**
+```bash
+genesis run --system "You are a strict code reviewer." "Review src/main.rs"
+```
+
+**Persist the response to a named session:**
+```bash
+genesis run --session-id audit-2026 "Run a security audit on the gateway module"
+```
+
+**Use in a CI pipeline:**
+```bash
+genesis run --raw --stream "Explain the failing test in the last git commit"
+```
+
+</How>
+
+<Why>
+
+## Single-shot vs Interactive
+
+`run` and `chat` share the same `SessionExecutionService` execution path. The only difference is that `run` calls it once and exits, whereas `chat` wraps it in an interactive loop. This means `run` gets the full agent loop: tool calling, context management, token-aware compression, and hooks — not a stripped-down version.
+
+## Raw Output Mode
+
+The `--raw` flag suppresses the metadata preamble (session ID, model, token counts) and prints only the assistant's response text. This is important for scripting: piping a raw response to another command, writing it to a file, or comparing it in a test.
+
+## Streaming
+
+By default, `run` waits for the entire response before printing. With `--stream`, output is printed as each chunk arrives via SSE. This is preferable for long-running tasks where you want to see progress, but less suitable for piped workflows where you need the complete response before processing it.
+
+## Image Attachments
+
+The `-i`/`--image` flag can be repeated to attach multiple images. Each value can be a local file path (automatically base64-encoded) or a remote URL (sent as-is). This makes `run` useful for automated image-analysis workflows, such as processing screenshots in a CI job.
+
+</Why>
+
+</CliCommand>

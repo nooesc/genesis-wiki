@@ -1,14 +1,122 @@
 ---
 title: "genesis schedule"
-description: "Scheduled prompts"
+description: "Manage scheduled prompts"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-storage/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="schedule" usage="genesis schedule <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis schedule`?
+
+The `schedule` command manages timed, recurring agent tasks. A schedule is a cron expression paired with a prompt and a delivery destination. When the cron expression fires, the scheduler executes the prompt as an agent session and delivers the result to the specified destination — a webhook URL, a messaging platform channel, or another endpoint.
+
+Schedules are stored in SQLite and executed by the scheduler daemon that runs inside `genesis serve`. They are ideal for automated reports, daily briefings, monitoring checks, and any task that should recur on a calendar or interval basis.
 
 </What>
+
+<How>
+
+## Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `create` | Create a new schedule |
+| `list` | List all configured schedules |
+| `delete <ID>` | Delete a schedule by ID |
+| `run` | Start the background scheduler daemon (standalone, without HTTP server) |
+
+## Options for `schedule create`
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--cron <EXPR>` | `string` | **(required)** Cron expression for the schedule |
+| `--destination <URL>` | `string` | **(required)** Delivery destination for results |
+| `--prompt <TEXT>` | `string` | **(required)** Prompt to execute when the schedule triggers |
+
+## Cron Expression Syntax
+
+Genesis supports a subset of standard cron syntax:
+
+| Pattern | Meaning |
+|---------|---------|
+| `*` | Every unit |
+| `N` | Specific value |
+| `*/N` | Every N units |
+| `N-M` | Range from N to M |
+| `N,M,P` | List of values |
+
+The five fields are: `minute hour day-of-month month day-of-week`.
+
+## Examples
+
+**Create a daily 9am briefing:**
+```bash
+genesis schedule create \
+  --cron "0 9 * * *" \
+  --destination "https://hooks.example.com/morning" \
+  --prompt "Give me a summary of what I should focus on today"
+```
+
+**Every Monday morning standup digest:**
+```bash
+genesis schedule create \
+  --cron "0 8 * * 1" \
+  --destination "https://hooks.example.com/standup" \
+  --prompt "Summarise open GitHub issues and PRs from the last week"
+```
+
+**Every 30 minutes health check:**
+```bash
+genesis schedule create \
+  --cron "*/30 * * * *" \
+  --destination "https://hooks.example.com/health" \
+  --prompt "Check if any critical services are down and report status"
+```
+
+**List all schedules:**
+```bash
+genesis schedule list
+```
+
+**Delete a schedule:**
+```bash
+genesis schedule delete sched-abc123
+```
+
+**Run the scheduler standalone (without the HTTP server):**
+```bash
+genesis schedule run
+```
+
+</How>
+
+<Why>
+
+## Scheduler Runtime
+
+The scheduler polls the `schedules` table every minute. For each schedule whose cron expression matches the current minute, it executes the associated prompt as a full agent session (including tool calling) and sends the output to the configured destination. This happens asynchronously and does not block other operations.
+
+## Cron Evaluation
+
+Genesis implements its own cron evaluator with full support for the five standard fields. The `*/N` step syntax, `N-M` ranges, and comma-separated lists are all supported, covering the vast majority of practical scheduling needs without requiring an external cron daemon.
+
+## Integration with `genesis serve`
+
+When running `genesis serve`, the scheduler daemon starts automatically as a background Tokio task within the same process. You do not need to run `genesis schedule run` separately in a production deployment — the HTTP API server includes the scheduler. The standalone `run` subcommand exists for cases where you want scheduled execution without exposing the HTTP API.
+
+## Enable/Disable via API
+
+Schedules can be enabled or disabled without deletion via the `PATCH /schedules/{id}/enabled` API endpoint exposed by `genesis serve`. This allows temporary suspension of a schedule without losing its configuration.
+
+</Why>
+
+</CliCommand>

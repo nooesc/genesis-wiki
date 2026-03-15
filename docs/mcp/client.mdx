@@ -1,16 +1,145 @@
 ---
 title: "MCP Client"
-description: "Connecting to MCP servers"
+description: "Stdio and HTTP transports, initialize handshake, tool discovery"
 crate: genesis-mcp
 source_files:
   - crates/genesis-mcp/src/client.rs
-last_synced_commit: "0000000"
+  - crates/genesis-mcp/src/transport.rs
+  - crates/genesis-mcp/src/protocol.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the MCP Client?
+
+The `McpClient` represents a single connected MCP server. It handles the full lifecycle of a server connection:
+
+1. Transport establishment (subprocess spawn or HTTP connection)
+2. The `initialize` / `notifications/initialized` handshake
+3. Tool, resource, and prompt discovery via `tools/list`, `resources/list`, and `prompts/list`
+4. Tool invocation via `tools/call`
+
+Each `McpClient` is owned by the `McpManager`, which manages all server connections for a Genesis instance.
 
 </What>
+
+<How>
+
+## Transports
+
+### Stdio transport
+
+The stdio transport spawns a subprocess and communicates via its stdin and stdout pipes. This is the most common MCP transport — most community MCP servers are designed to run this way.
+
+```
+Genesis process
+│  writes JSON-RPC to stdin ──►  MCP server process
+│  reads JSON-RPC from stdout ◄──  MCP server process
+│  stderr is captured (for logging)
+```
+
+The transport uses two async Tokio tasks:
+- A **writer task** that receives messages over an unbounded channel and writes them to the subprocess stdin.
+- A **reader task** that reads newline-delimited JSON from stdout and dispatches responses to waiting callers via `oneshot` channels.
+
+Frame size is limited to 4 MiB to prevent memory exhaustion from malformed or excessively large responses.
+
+### HTTP transport
+
+The HTTP transport sends each JSON-RPC request as an HTTP POST to a configured URL. Responses are read from the HTTP body. This transport supports MCP servers that run as separate network services (e.g., a cloud-hosted tool server).
+
+Both transports implement the `McpTransport` trait, making `McpClient` transport-agnostic.
+
+## Initialize handshake
+
+When `McpClient::connect` is called, it immediately performs the MCP initialize handshake:
+
+```json
+// Client → Server
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "genesis",
+      "version": "0.8.0"
+    }
+  }
+}
+
+// Server → Client
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersion": "2024-11-05",
+    "serverInfo": { "name": "filesystem", "version": "1.0.0" },
+    "capabilities": { "tools": {} }
+  }
+}
+```
+
+After the handshake, Genesis sends `notifications/initialized` (no response expected), then discovers tools via `tools/list`.
+
+## Tool discovery
+
+After initialization, the client calls `tools/list` to enumerate available tools:
+
+```json
+// Response from tools/list
+{
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read the contents of a file",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" }
+        },
+        "required": ["path"]
+      }
+    }
+  ]
+}
+```
+
+These tool definitions are stored in the `McpClient` and exposed to the `McpManager`, which adds the `mcp_{name}__` prefix and registers them in the tool registry.
+
+## Resources and prompts
+
+In addition to tools, the client discovers:
+- **Resources** — URIs that the server can read on demand (files, database records, API responses).
+- **Prompts** — Parameterised prompt templates that can be rendered into conversation context.
+
+These are available via `GET /health/mcp` and can be listed via the `McpManager` API.
+
+## Calling a tool
+
+```
+McpManager::call_tool("mcp_filesystem__read_file", {"path": "/etc/hosts"})
+  │
+  ├── parse prefix: server="filesystem", tool="read_file"
+  ├── get McpClient for "filesystem"
+  └── McpClient::call_tool("read_file", {"path": "/etc/hosts"})
+        │
+        └── transport.request("tools/call", { name, arguments }, timeout)
+```
+
+If the call returns a transport or timeout error, `McpManager` reconnects the server and retries once.
+
+</How>
+
+<Why>
+
+The transport abstraction (`McpTransport` trait) means the same `McpClient` code handles both subprocess and network servers, and adding a new transport (e.g., WebSocket, Unix socket) only requires implementing that trait. The strict frame size limit (4 MiB) prevents a single large response from exhausting memory — especially important when connecting to third-party servers you do not control.
+
+The reconnect-on-failure logic in `McpManager` is critical for long-running gateway deployments: MCP server processes can restart due to updates or OOM kills, and without reconnection, every subsequent tool call to that server would fail permanently until Genesis is restarted.
+
+</Why>

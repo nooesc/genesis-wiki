@@ -1,16 +1,76 @@
 ---
 title: "Todo"
-description: "TODO management"
+description: "In-session task list for multi-step planning and progress tracking"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/todo.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="todo" module="builtins/todo.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+An in-memory task list that lives for the duration of the current session. The agent uses this to decompose complex multi-step tasks, track which steps are in progress, and report completion status. Each session gets its own isolated todo list so that concurrent sessions (for example, via the gateway) cannot see each other's tasks.
+
+Items progress through three states: `pending` (not started), `in_progress` (currently working on), and `done` (completed). The list is displayed with visual markers: `[ ]` for pending, `[~]` for in progress, and `[x]` for done.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | `string` | Yes | One of: `add`, `update`, `list`, `clear` |
+| `text` | `string` | Required for `add` | Task description to add |
+| `id` | `string` | Required for `update` | Numeric ID of the task to update |
+| `status` | `string` | Required for `update` | New status: `pending`, `in_progress`, or `done` |
+
+## Examples
+
+**Adding tasks:**
+```json
+{ "name": "todo", "arguments": { "action": "add", "text": "Read the error logs" } }
+```
+
+**Listing tasks:**
+```json
+{ "name": "todo", "arguments": { "action": "list" } }
+```
+```
+#1 [ ] Read the error logs
+#2 [~] Fix the failing test
+#3 [x] Update the documentation
+(1 pending, 1 in progress, 1 done)
+```
+
+**Updating status:**
+```json
+{ "name": "todo", "arguments": { "action": "update", "id": "1", "status": "in_progress" } }
+```
+
+**Clearing all:**
+```json
+{ "name": "todo", "arguments": { "action": "clear" } }
+```
+
+</How>
+
+<Why>
+
+The todo list is stored in a process-global `LazyLock<Mutex<HashMap<String, Vec<TodoItem>>>>` keyed by session ID. This design means:
+
+- **No database overhead**: Simple in-memory reads and writes; no SQLite round-trip needed for ephemeral task tracking.
+- **Session isolation**: The HashMap key is the session ID, so gateway sessions running concurrently cannot interfere.
+- **Non-persistent by design**: The list resets when the process restarts. This is intentional — todos are planning scaffolding for the current task, not durable records. Use the `memory` tool to persist important information across sessions.
+
+Item IDs are 1-based sequential integers within each session's list. The `update` action requires finding the item by ID in the vector; items are never reindexed after deletion so IDs remain stable throughout a session.
+
+</Why>
+
+</ToolRef>

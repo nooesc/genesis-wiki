@@ -1,13 +1,49 @@
 ---
 title: "eval compare"
-description: "Compare two trajectory reports"
-last_synced_commit: "0000000"
+description: "Compare two trajectory replay reports"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval compare" usage="genesis eval compare <LEFT> <RIGHT>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval compare`?
+
+The `compare` command takes two trajectory JSON files and prints a side-by-side diff of their replay reports. It highlights differences in outcomes, step counts, token usage, warnings, and tool calls between the two trajectories. This is useful for regression testing (did a model change break behavior?) or A/B comparisons between different approaches to the same task.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<LEFT>` | `string` | Yes | Left-hand trajectory JSON file |
+| `<RIGHT>` | `string` | Yes | Right-hand trajectory JSON file |
+
+## Example
+
+```bash
+# Compare two trajectories from different model runs
+genesis eval compare ./trajectories/run-a.json ./trajectories/run-b.json
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+`compare` runs the same replay analysis as `report` on each file independently, then diffs the resulting report structures. The left/right naming convention is intentional: the left file is treated as the baseline and the right as the candidate, so differences are described from the perspective of "what changed in right relative to left." This makes it natural to use in CI where `left` is the last known-good trajectory and `right` is the new one.
+
+</Why>
+
+</CliCommand>

@@ -8,6 +8,132 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+Tests in Genesis live inside the same source file as the code they test. There are no separate `tests/` directories — instead, each `.rs` file ends with a `#[cfg(test)] mod tests { ... }` block that is compiled only when running tests. Think of it like margin notes written directly on the page they annotate: the tests are always right next to the code they describe, so they stay in sync as the code evolves.
+
+Storage tests always create a fresh temporary directory with an isolated SQLite database so they cannot interfere with each other or with your real `~/.genesis/genesis.db`. Async code is tested with `#[tokio::test]` rather than `#[test]`.
 
 </What>
+
+<How>
+
+### Running tests
+
+```bash
+cargo test --workspace                          # run all ~1340 tests
+cargo test -p genesis-tools                     # single crate
+cargo test -p genesis-storage -- session_store  # filter by name substring
+cargo test -- --nocapture                       # show println! output
+```
+
+### Inline test module pattern
+
+Every test module follows this shape:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thing_does_what_it_says() {
+        // arrange
+        // act
+        // assert
+    }
+}
+```
+
+The module is named `tests` by convention. It imports the parent module with `use super::*` so private functions are accessible without making them `pub`.
+
+### Tempdir pattern for storage tests
+
+Any test that touches SQLite must create an isolated database:
+
+```rust
+use tempfile::tempdir;
+use genesis_storage::{bootstrap, SessionStore};
+
+#[test]
+fn session_store_creates_and_loads_messages_in_order() {
+    let dir = tempdir().expect("tempdir should exist");
+    let database_path = dir.path().join("genesis.db");
+    bootstrap(&database_path).expect("bootstrap should succeed");
+
+    let store = SessionStore::new(&database_path);
+    // ... test body
+}   // `dir` drops here, deleting the temp directory
+```
+
+The `tempdir()` guard ensures cleanup even if the test panics.
+
+### Async tests
+
+Use `#[tokio::test]` for anything `async`. No additional setup is needed — the macro creates a single-threaded Tokio runtime:
+
+```rust
+#[tokio::test]
+async fn bus_publish_subscribe() {
+    let bus = AgentBus::new();
+    let mut rx = bus.subscribe("test-channel").await;
+    bus.publish(msg).await;
+    let received = rx.recv().await.unwrap();
+    assert_eq!(received.id, "m1");
+}
+```
+
+### Tool tests
+
+Tool tests build a minimal `ToolContext` and call `ToolHandler::run()` directly — no live LLM or running agent required:
+
+```rust
+fn ctx() -> ToolContext {
+    ToolContext {
+        session_id: "test".to_owned(),
+        profile: "test".to_owned(),
+        data_dir: "/tmp".to_owned(),
+        allow_destructive_tools: true,
+        terminal_backend: None,
+        default_working_dir: None,
+        sandbox_manager: None,
+    }
+}
+
+#[test]
+fn todo_add_and_list() {
+    let tool = TodoTool;
+    let call = ToolCall {
+        name: "todo".to_owned(),
+        arguments: BTreeMap::from([
+            ("action".to_owned(), "add".to_owned()),
+            ("text".to_owned(), "write tests".to_owned()),
+        ]),
+    };
+    let output = tool.run(&call, &ctx()).expect("should succeed");
+    assert!(output.content.contains("write tests"));
+}
+```
+
+### Naming conventions
+
+Test names are descriptive `snake_case` sentences that describe the exact behaviour being verified:
+
+- `session_store_creates_and_loads_messages_in_order`
+- `add_usage_accumulates_token_counts`
+- `todo_sessions_are_isolated`
+- `bus_publish_subscribe`
+
+Avoid names like `test_thing` or `it_works`.
+
+</How>
+
+<Why>
+
+Inline test modules (rather than a separate `tests/` directory) keep tests close to the code they cover. When you modify a function, the relevant tests are visible in the same scroll context — no file-switching required. The Rust compiler enforces that `#[cfg(test)]` code is excluded from release builds, so there is no runtime cost.
+
+The `tempfile` crate is used universally for SQLite isolation because SQLite's WAL mode and connection pooling can cause subtle cross-test interference when tests share a database file. The `tempdir()` guard implements `Drop` to clean up the directory, which happens even on test failure or panic.
+
+`tracing-test` is available in `workspace.dependencies` for tests that need to assert on log output, but most tests assert on return values and error types rather than log messages — keeping tests resilient to log-message changes.
+
+The `#[tokio::test]` approach means each async test gets its own runtime, preventing state leakage between tests via Tokio's task-local storage or shared channels. For the `AgentBus` broadcast channel tests, each test constructs a new `AgentBus` instance rather than using a shared global, which is why session isolation tests explicitly clear state with helper functions like `clear_todos()`.
+
+</Why>

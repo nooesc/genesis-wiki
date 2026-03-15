@@ -1,14 +1,218 @@
 ---
 title: "Schedules API"
-description: "Schedule endpoints"
+description: "Create and manage cron-based scheduled agent tasks"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/lib.rs
+  - crates/genesis-core/src/scheduler.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ApiEndpoint } from '@site/src/components/ApiEndpoint';
+
+<ApiEndpoint method="GET" path="/schedules" auth={true}>
 
 <What>
 
-*Content coming soon.*
+List all scheduled tasks, optionally filtered to enabled-only. Schedules run cron expressions and send prompts to the agent at the specified times.
 
 </What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enabled_only` | `boolean` | `false` | When `true`, returns only active schedules |
+
+## Response
+
+```json
+{
+  "schedules": [
+    {
+      "id": "daily-standup",
+      "cron_expression": "0 9 * * 1-5",
+      "destination": "telegram:123456789",
+      "prompt": "Generate a brief standup summary from yesterday's activity.",
+      "enabled": true,
+      "created_at": "2026-03-01 10:00:00",
+      "last_run_at": "2026-03-15 09:00:00"
+    }
+  ],
+  "count": 1
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `id` | Unique schedule identifier |
+| `cron_expression` | Standard 5-field cron syntax (`minute hour day month weekday`) |
+| `destination` | Where to deliver the response (e.g., `telegram:chatid`) |
+| `prompt` | The message sent to the agent on each trigger |
+| `enabled` | Whether the schedule is active |
+| `last_run_at` | Timestamp of the most recent execution, or `null` |
+
+</How>
+
+<Why>
+
+Review all scheduled tasks to audit what prompts are running and when. The `enabled_only` filter is useful when you want to count active schedules without loading disabled drafts.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="POST" path="/schedules" auth={true}>
+
+<What>
+
+Create a new scheduled task. The scheduler runtime (which runs inside `genesis serve`) will poll for due schedules every minute and execute them.
+
+</What>
+
+<How>
+
+## Request
+
+```json
+{
+  "id": "daily-standup",
+  "cron_expression": "0 9 * * 1-5",
+  "destination": "telegram:123456789",
+  "prompt": "Generate a brief standup summary from yesterday's git commits and completed tasks."
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | Yes | Unique identifier for this schedule |
+| `cron_expression` | Yes | Standard cron: `minute hour day month weekday`. Supports `*`, `*/N`, `N-M`, and lists `N,M` |
+| `destination` | Yes | Delivery target in `platform:identifier` format |
+| `prompt` | Yes | The message to send to Eve on each trigger |
+
+## Response
+
+The created schedule object is returned with HTTP 201.
+
+### Cron expression examples
+
+| Expression | Meaning |
+|------------|---------|
+| `0 9 * * 1-5` | 9:00 AM, Monday through Friday |
+| `*/30 * * * *` | Every 30 minutes |
+| `0 0 1 * *` | Midnight on the first of each month |
+| `0 8,17 * * *` | 8 AM and 5 PM every day |
+
+</How>
+
+<Why>
+
+Schedules make Eve proactive rather than reactive. Use them for daily briefings, periodic health checks, automated reports, or any task that should happen on a recurring basis without manual prompting.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/schedules/{id}" auth={true}>
+
+<What>
+
+Fetch a single schedule by its ID. Returns `404` if the schedule does not exist.
+
+</What>
+
+<How>
+
+## Response
+
+The full schedule object, identical to items in the `GET /schedules` array.
+
+</How>
+
+<Why>
+
+Inspect a specific schedule before modifying it, or verify that a newly created schedule was stored correctly.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="DELETE" path="/schedules/{id}" auth={true}>
+
+<What>
+
+Permanently delete a schedule. The scheduler will stop executing it immediately. Returns `404` if the schedule does not exist.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "deleted": true,
+  "id": "daily-standup"
+}
+```
+
+</How>
+
+<Why>
+
+Use delete for permanent removal. Use `PATCH /schedules/{id}/enabled` if you only want to pause a schedule temporarily.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="PATCH" path="/schedules/{id}/enabled" auth={true}>
+
+<What>
+
+Enable or disable a schedule without deleting it. Disabled schedules remain in the database but are not executed by the scheduler runtime.
+
+</What>
+
+<How>
+
+## Request
+
+```json
+{
+  "enabled": false
+}
+```
+
+## Response
+
+```json
+{
+  "id": "daily-standup",
+  "enabled": false,
+  "updated": true
+}
+```
+
+Returns `404` if the schedule does not exist.
+
+</How>
+
+<Why>
+
+Pausing a schedule is safer than deleting it when you want to temporarily stop execution (e.g., during maintenance windows or holidays) and then resume later.
+
+</Why>
+
+</ApiEndpoint>

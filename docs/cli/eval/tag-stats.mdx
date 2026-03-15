@@ -1,13 +1,52 @@
 ---
 title: "eval tag-stats"
-description: "Tag frequency distribution"
-last_synced_commit: "0000000"
+description: "Show tag frequency distribution across trajectory files"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval tag-stats" usage="genesis eval tag-stats <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval tag-stats`?
+
+The `tag-stats` command scans a directory of trajectory JSON files and prints a frequency table of all tags found, sorted by count descending. This gives you a quick view of dataset composition: which task categories are over- or under-represented, which tools appear most frequently, and which outcomes dominate. It is most useful after running `eval auto-tag` to ensure trajectories have been tagged before inspecting the distribution.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Directory containing trajectory JSON files |
+| `--recursive` | `bool` | No | Recursively scan nested directories |
+
+## Examples
+
+```bash
+# Show tag distribution for a dataset
+genesis eval tag-stats ./trajectories
+
+# Recursively collect tags from nested directories
+genesis eval tag-stats ./trajectories --recursive
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+`tag-stats` collects all tag values across every trajectory file, counts occurrences, and prints them sorted from most to least frequent. Trajectories with no tags are counted separately so you can see how many files still need tagging. The output is intentionally simple (a plain count table) so it can be parsed by scripts or piped to other tools. To apply tags first, run `eval auto-tag` on the same directory.
+
+</Why>
+
+</CliCommand>

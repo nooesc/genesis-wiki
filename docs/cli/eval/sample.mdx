@@ -1,13 +1,58 @@
 ---
 title: "eval sample"
-description: "Random trajectory sampling"
-last_synced_commit: "0000000"
+description: "Random sample of trajectories from a directory"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval sample" usage="genesis eval sample <DIR> --output <DIR> --count <N> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval sample`?
+
+The `sample` command randomly selects a fixed number of trajectory files from a directory and copies them to an output directory. Use it to create a representative subset of a large dataset for quick inspection, manual review, or creating a held-out test set without going through the full `eval split` workflow. A random seed can be provided to make the sampling reproducible.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Source directory containing trajectory JSON files |
+| `--output <DIR>` | `string` | Yes | Output directory for sampled trajectories |
+| `--count <N>` | `usize` | Yes | Number of trajectories to sample |
+| `--seed <SEED>` | `u64` | No | Random seed for reproducibility |
+| `--recursive` | `bool` | No | Recursively scan nested directories |
+
+## Examples
+
+```bash
+# Sample 100 random trajectories
+genesis eval sample ./trajectories --output ./sample --count 100
+
+# Reproducible sample with a fixed seed
+genesis eval sample ./trajectories --output ./sample --count 100 --seed 42
+
+# Recursively sample from nested directories
+genesis eval sample ./trajectories --output ./sample --count 50 --recursive --seed 7
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+If `--count` is greater than or equal to the total number of trajectories found, all files are copied (no error is raised). Without `--seed`, the sample uses a random seed and is not reproducible across runs. The output directory is created if it does not exist. Source files are copied, not moved. For a stratified sample (e.g. sample equally from success and failure trajectories), use `eval filter` first to split by outcome, then `eval sample` on each subset.
+
+</Why>
+
+</CliCommand>

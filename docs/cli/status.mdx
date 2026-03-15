@@ -1,14 +1,76 @@
 ---
 title: "genesis status"
-description: "Status dashboard"
+description: "Show status dashboard of all Genesis components"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="status" usage="genesis status" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis status`?
+
+The `status` command shows a component-by-component status dashboard of everything Genesis depends on. Where `doctor` focuses on configuration correctness and `info` focuses on usage counters, `status` focuses on runtime health: is the database accessible, can the provider be reached, which MCP servers are connected, are any background processes running.
+
+It is designed for quick operational awareness — checking that all the pieces are in a healthy state before running a long batch job or before investigating an unexpected error.
 
 </What>
+
+<How>
+
+## Options
+
+`genesis status` takes no options.
+
+## Examples
+
+**Show the status dashboard:**
+```bash
+genesis status
+```
+
+**Machine-readable JSON output:**
+```bash
+genesis status --json
+```
+
+## Example Output
+
+```
+Component          Status    Details
+─────────────────────────────────────────────
+Config             ok        ~/.genesis/config.yaml
+Database           ok        ~/.genesis/genesis.db (schema v6)
+Provider           ok        anthropic / claude-sonnet-4-6
+MCP: filesystem    ok        8 tools
+MCP: browser       degraded  connection timeout
+Scheduler          idle      3 schedules, next: 09:00
+```
+
+</How>
+
+<Why>
+
+## Operational vs Configuration Health
+
+The distinction between `doctor`, `info`, and `status` is intentional:
+
+- **`doctor`** — validates configuration correctness, bootstraps storage, optionally tests API connectivity with a real call
+- **`info`** — reports usage counters from the database (sessions, skills, memories, tools)
+- **`status`** — reports the live runtime state of each component (can I reach it right now?)
+
+`status` is the right command to run when you suspect something is wrong at runtime (an MCP server has crashed, the database file got locked by another process, etc.) rather than when you suspect misconfiguration.
+
+## MCP Server Health
+
+The status output includes a row for each configured MCP server showing its connection state and tool count. A `degraded` status means the server is configured but currently unreachable — Genesis will continue to operate with built-in tools only until the connection is restored. The MCP manager auto-reconnects on failure, so a degraded server often recovers without intervention.
+
+</Why>
+
+</CliCommand>

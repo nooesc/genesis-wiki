@@ -1,16 +1,154 @@
 ---
 title: "Process"
-description: "Process management"
+description: "List running processes, inspect system info, and send signals"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/process.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="list_processes" module="builtins/process.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Lists running OS processes using `ps aux`, with optional filtering by command pattern or username, sorting by CPU usage, memory usage, or PID, and a configurable result limit. This gives Eve visibility into what is running on the host system — useful for finding a stuck process, checking whether a server is up, or diagnosing resource usage.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `pattern` | `string` | No | — | Case-insensitive substring to match against command names |
+| `user` | `string` | No | — | Filter to processes owned by this user |
+| `sort` | `string` | No | `"cpu"` | Sort order: `cpu`, `mem`, or `pid` |
+| `limit` | `string` | No | `"20"` | Maximum number of processes to return |
+
+## Example: Find Node processes
+
+```json
+{
+  "name": "list_processes",
+  "arguments": {
+    "pattern": "node",
+    "sort": "mem",
+    "limit": "10"
+  }
+}
+```
+
+**Response:**
+```
+USER       PID     %CPU     %MEM     ...  COMMAND
+deploy     12345   0.0      2.3      ...  node server.js
+deploy     12346   0.0      1.8      ...  node worker.js
+```
+
+</How>
+
+<Why>
+
+The tool runs `ps aux` and parses its output line-by-line. The standard `ps aux` format on both Linux and macOS is: `USER PID %CPU %MEM VSZ RSS TT STAT STARTED TIME COMMAND...`. Parsing requires at least 11 columns; lines with fewer columns are silently skipped. Sorting is done on the parsed numeric values (`f64` for CPU/mem, `i64` for PID) rather than lexicographically, so `10.0%` sorts correctly above `9.5%`.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="kill_process" module="builtins/process.rs" crate="genesis-tools">
+
+<What>
+
+Sends a signal to a process by PID. Defaults to `SIGTERM` (graceful shutdown). Supports a curated set of signals for common use cases. Refuses to send signals to PID 0 or PID 1 (system processes) as a safety guard.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `pid` | `string` | Yes | — | Process ID to signal |
+| `signal` | `string` | No | `"TERM"` | Signal name: `TERM`, `KILL`, `INT`, `HUP`, `QUIT`, `USR1`, `USR2`, `STOP`, or `CONT` |
+
+## Example
+
+```json
+{
+  "name": "kill_process",
+  "arguments": {
+    "pid": "12345",
+    "signal": "TERM"
+  }
+}
+```
+
+**Response:**
+```
+Sent SIGTERM to PID 12345
+```
+
+</How>
+
+<Why>
+
+The signal allowlist (`TERM`, `KILL`, `INT`, `HUP`, `QUIT`, `USR1`, `USR2`, `STOP`, `CONT`) covers the signals most useful for process management while excluding less common signals that could cause unexpected behavior. The `SIG` prefix is added automatically in the `kill -SIGNAME PID` invocation. PID protection (blocking 0 and 1) prevents accidents during autonomous operation.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="system_info" module="builtins/process.rs" crate="genesis-tools">
+
+<What>
+
+Returns system resource information: CPU load averages, memory usage, disk usage, and active network interfaces. Each section is queried using native OS utilities appropriate for the current platform (macOS or Linux).
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `section` | `string` | No | `"all"` | Which section to return: `all`, `cpu`, `memory`, `disk`, or `network` |
+
+## Example
+
+```json
+{
+  "name": "system_info",
+  "arguments": { "section": "memory" }
+}
+```
+
+**Response:**
+```
+=== Memory ===
+Total: 16.0 GB
+Used: 8.4 GB
+Free: 2.1 GB
+Inactive: 5.5 GB
+```
+
+</How>
+
+<Why>
+
+**Platform-specific implementations:**
+- **CPU**: Uses `uptime` for load averages (works on both platforms), plus `sysctl hw.ncpu` (macOS) or `nproc` (Linux).
+- **Memory**: Uses `vm_stat` with page-count arithmetic on macOS; reads `/proc/meminfo` on Linux.
+- **Disk**: Uses `df -h -T apfs,hfs` on macOS; `df -h --exclude-type=tmpfs --exclude-type=devtmpfs` on Linux.
+- **Network**: Parses `ifconfig` on macOS (filtering to interfaces with `inet` addresses); uses `ip -brief addr` on Linux with `ifconfig` as fallback.
+
+All underlying commands are run synchronously. If a command fails (e.g. `nproc` not installed), the section returns `(command failed)` rather than erroring the whole tool.
+
+</Why>
+
+</ToolRef>

@@ -1,16 +1,105 @@
 ---
 title: "Process Registry"
-description: "Process tracking"
+description: "Manage long-running background processes: spawn, poll, stream logs, send input, wait, and kill"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/process_registry.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="process" module="builtins/process_registry.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Manages long-running background processes through a thread-safe in-process registry. A background process is spawned by setting `background=true` on `shell_exec`, which assigns it a session ID (e.g. `proc_a1b2c3d4e5f6`). The `process` tool then lets Eve interact with that process by ID through six actions:
+
+- **list** — Show all tracked processes with status, PID, start time, elapsed time, and output size.
+- **poll** — Get the current status and a preview of the last 4 KiB of output.
+- **log** — Paginate through the full output buffer with byte-offset addressing.
+- **write** — Send text to the process's stdin (for interactive programs that accept input).
+- **wait** — Block until the process finishes (with timeout), then return the last 4 KiB of output.
+- **kill** — Send SIGTERM to the process.
+
+Each process gets a rolling 200 KiB output buffer. Output older than the buffer capacity is discarded as new output arrives. Finished processes are retained in the registry for 30 minutes before being automatically pruned.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | `string` | Yes | One of: `list`, `poll`, `log`, `write`, `wait`, `kill` |
+| `id` | `string` | Required for `poll`, `log`, `write`, `wait`, `kill` | Process session ID |
+| `input` | `string` | Required for `write` | Text to write to the process's stdin |
+| `offset` | `string` | Optional for `log` | Byte offset to start reading from (default: `"0"`) |
+| `limit` | `string` | Optional for `log` | Maximum bytes to return (default: `"16384"`) |
+| `timeout_secs` | `string` | Optional for `wait` | Seconds to wait before timing out (default: `"60"`) |
+
+## Workflow Example
+
+**1. Start a long-running build in the background:**
+```json
+{
+  "name": "shell_exec",
+  "arguments": { "command": "cargo build --release 2>&1", "background": "true" }
+}
+```
+```
+Background process started with session ID: proc_a1b2c3d4e5f6
+```
+
+**2. Poll for progress:**
+```json
+{ "name": "process", "arguments": { "action": "poll", "id": "proc_a1b2c3d4e5f6" } }
+```
+```
+Process: proc_a1b2c3d4e5f6
+Command: cargo build --release 2>&1
+PID: 9821
+Status: running
+Elapsed: 45.2s
+Output (12340 bytes total, last 4096):
+   Compiling genesis-tools v0.1.0
+   Compiling genesis-core v0.1.0
+```
+
+**3. Wait for completion:**
+```json
+{ "name": "process", "arguments": { "action": "wait", "id": "proc_a1b2c3d4e5f6", "timeout_secs": "300" } }
+```
+
+**4. Read paginated logs:**
+```json
+{ "name": "process", "arguments": { "action": "log", "id": "proc_a1b2c3d4e5f6", "offset": "0", "limit": "8192" } }
+```
+
+**5. List all background processes:**
+```json
+{ "name": "process", "arguments": { "action": "list" } }
+```
+```
+ID                 STATUS     PID      STARTED    ELAPSED    OUTPUT     COMMAND
+proc_a1b2c3d4e5f6  exited(0)  9821     09:00:00   3m 12.4s   45KB       cargo build --release...
+proc_b2c3d4e5f6a7  running    10021    09:05:00   15.8s      2KB        npm run dev
+```
+
+</How>
+
+<Why>
+
+**Rolling buffer design:** Each process's stdout and stderr are merged into a single `RollingBuffer` (200 KiB cap) read by two background threads (one per stream). This design prevents OS pipe buffer deadlocks (which occur when a process's stdout fills before the parent reads it) while keeping the implementation simple. The rolling behavior discards the oldest bytes when the cap is exceeded, so `poll` always shows recent output even for very verbose processes.
+
+**Shell startup noise stripping:** The registry strips common shell startup noise from output previews — lines like `bash: cannot set terminal process group` and `stdin: is not a tty` that appear when spawning interactive shells non-interactively. These lines are stripped from the beginning of output only, via a `take_while` iterator that stops at the first non-noise line, so they do not pollute the displayed output.
+
+**Concurrency limit:** A maximum of 64 concurrent running processes is enforced. Attempting to spawn a 65th process returns an error. Finished processes (which no longer consume system resources) do not count against this limit.
+
+**Expiry:** Finished process records are kept for 30 minutes (`FINISHED_TTL = 30 * 60 seconds`) and then pruned from the registry on the next `list` or `spawn` call. This prevents the registry from growing unboundedly in long-running gateway sessions.
+
+</Why>
+
+</ToolRef>

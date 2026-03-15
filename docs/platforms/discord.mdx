@@ -2,13 +2,93 @@
 title: "Discord"
 description: "Discord bot integration"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/platforms/discord.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Discord Platform?
+
+The Discord platform connects Eve to Discord servers and DMs via Discord's Interactions endpoint. Users interact with Eve using slash commands (e.g. `/ask message:Hello`). The handler processes three Discord interaction types:
+
+- **Ping (type 1):** Required for Discord's endpoint verification handshake. Eve responds with Pong immediately.
+- **Application Command (type 2):** Slash commands. Eve reads the `message`, `prompt`, or `question` option from the command data and runs the agent.
+- **Message Component (type 3):** Button clicks and similar component interactions.
+
+Discord requires a response within 3 seconds. For agent interactions, Eve immediately returns a deferred response (interaction type 5, which shows a loading state), then edits the original response with the agent's reply once processing is complete. This prevents timeouts on complex, multi-tool turns.
+
+Each Discord channel has a stable session ID (`discord-{channel_id}`), so conversation history persists across interactions in the same channel. DM pairing is enforced: unknown users receive a code to authorize via the API before the agent processes their messages.
 
 </What>
+
+<How>
+
+## Setup
+
+1. Create an application at [discord.com/developers/applications](https://discord.com/developers/applications).
+2. Set the Interactions Endpoint URL to `https://your-server/discord/interactions`.
+3. Set the environment variable:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DISCORD_PUBLIC_KEY` | Yes | Application public key for Ed25519 signature verification |
+
+## Webhook Endpoint
+
+```
+POST /discord/interactions
+Header: X-Signature-Ed25519: <signature>
+Header: X-Signature-Timestamp: <timestamp>
+```
+
+Every request is verified using Ed25519: the signature covers `timestamp + body` and is checked against `DISCORD_PUBLIC_KEY`. Requests that fail verification receive `401 Unauthorized`.
+
+## Slash Command Registration
+
+Register a slash command with Discord's API (one-time setup):
+
+```bash
+curl -X POST \
+  "https://discord.com/api/v10/applications/<APP_ID>/commands" \
+  -H "Authorization: Bot <BOT_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ask",
+    "description": "Ask Eve a question",
+    "options": [{
+      "type": 3,
+      "name": "message",
+      "description": "Your message",
+      "required": true
+    }]
+  }'
+```
+
+## Response Flow
+
+1. Discord sends the interaction; the handler verifies the Ed25519 signature.
+2. The handler returns `{"type": 5}` (deferred channel message) immediately.
+3. The agent runs in a background Tokio task.
+4. On completion, the handler PATCHes `webhooks/{app_id}/{token}/messages/@original` with the agent's reply text.
+
+## Message Limits
+
+Discord's message limit is 2000 characters. Responses longer than 2000 characters are truncated to 1997 characters with `...` appended.
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Deferred responses.** Discord's 3-second acknowledgment window is too short for any non-trivial agent turn. The deferred response pattern sends type 5 immediately and PATCHes later — Discord's canonical solution for bots with slow processing. It shows a loading indicator to the user rather than an error.
+
+**Ed25519 signature verification.** Discord mandates cryptographic request verification on the Interactions endpoint. Verifying the public key prevents spoofed payloads from reaching the agent.
+
+**Channel-scoped sessions.** Tying session IDs to `channel_id` rather than `user_id` allows channel-level conversation threads, which is consistent with how Discord users naturally expect a bot to maintain context in a specific channel.
+
+</Why>

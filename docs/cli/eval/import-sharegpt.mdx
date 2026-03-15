@@ -1,13 +1,49 @@
 ---
 title: "eval import-sharegpt"
-description: "Import ShareGPT JSONL"
-last_synced_commit: "0000000"
+description: "Import ShareGPT JSONL and create trajectory JSON files"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval import-sharegpt" usage="genesis eval import-sharegpt <FILE> --output <DIR>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval import-sharegpt`?
+
+The `import-sharegpt` command reads a ShareGPT JSONL file and converts each conversation into a Genesis trajectory JSON file written to the specified output directory. This is the reverse of `export-sharegpt`: it lets you ingest publicly available ShareGPT datasets (such as those from HuggingFace) into the Genesis trajectory format so they can be used with filtering, quality scoring, or re-exporting workflows. Each line in the input JSONL becomes one trajectory file.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<FILE>` | `string` | Yes | Path to a ShareGPT JSONL file |
+| `--output <DIR>` | `string` | Yes | Directory to write trajectory JSON files into |
+
+## Example
+
+```bash
+# Import a ShareGPT dataset and convert to trajectory files
+genesis eval import-sharegpt ./sharegpt.jsonl --output ./trajectories
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+ShareGPT conversations use `"from": "human"` and `"from": "gpt"` roles. The importer maps `"human"` to user turns and `"gpt"` to assistant turns. The `"system"` entry, if present at the start of the conversation, is used as the trajectory's system prompt. Because ShareGPT does not encode tool calls natively, imported trajectories will have no tool-call steps — they are treated as plain conversation trajectories. A synthetic session ID is generated for each imported conversation.
+
+</Why>
+
+</CliCommand>

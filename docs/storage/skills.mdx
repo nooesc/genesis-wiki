@@ -1,7 +1,9 @@
 ---
-title: "Skill Store"
-description: "Skill definitions"
+title: "SkillStore"
+description: "Reusable agent procedure definitions and associated files"
 crate: genesis-storage
+source_files:
+  - crates/genesis-storage/src/lib.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +11,99 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+`SkillStore` persists reusable agent procedures — named skills that Eve can invoke on demand. Each skill stores its name, description, step-by-step instructions, an optional trigger hint, and comma-separated tags. A companion `SkillFileStore` persists supporting files (e.g., SKILL.md specifications) keyed to a skill name.
+
+**`skills` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `name` | TEXT PK | Unique skill name |
+| `description` | TEXT NOT NULL | One-line summary shown in the skill list |
+| `instructions` | TEXT NOT NULL | Full procedure body (markdown or SKILL.md format) |
+| `trigger_hint` | TEXT | Keywords/phrases that suggest using this skill |
+| `tags` | TEXT | Comma-separated tag list |
+| `version` | INTEGER | Starts at 1, incremented on every update |
+| `created_at` | TEXT | ISO-8601 timestamp |
+| `updated_at` | TEXT | Updated on each upsert |
+
+**`skill_files` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `skill_name` | TEXT (PK part) | Foreign key to skills (CASCADE DELETE) |
+| `file_path` | TEXT (PK part) | Relative path used as the file identifier |
+| `content` | TEXT NOT NULL | File content |
+| `created_at` | TEXT | Timestamp |
 
 </What>
+
+<How>
+
+### Creating or updating a skill
+
+```rust
+let store = SkillStore::new(&database_path);
+let skill = store.upsert(
+    "deploy-web-app",
+    "Deploy a web application to production",
+    "1. Run tests\n2. Build artifact\n3. Push to registry\n4. Apply k8s manifest",
+    Some("deploy production release"),  // trigger_hint
+    &["devops", "deployment"],
+)?;
+// skill.version == 1 (first create) or N+1 (update)
+```
+
+The upsert uses `ON CONFLICT(name) DO UPDATE SET ... version = skills.version + 1`.
+
+### Getting and listing skills
+
+```rust
+let skill: Option<StoredSkill> = store.get("deploy-web-app")?;
+let all: Vec<StoredSkill> = store.list_all()?;        // ordered by name ASC
+let tagged: Vec<StoredSkill> = store.find_by_tag("devops")?;
+```
+
+### Relevance-ranked matching
+
+```rust
+let matches: Vec<StoredSkill> = store.find_matching("deploy release to production", 5)?;
+```
+
+`find_matching` tokenizes the prompt and scores each skill using weighted keyword overlap:
+- Trigger hint matches: 3x weight
+- Name matches: 2x weight
+- Tag matches: 2x weight
+- Description matches: 1x weight
+
+Only skills with a non-zero score are returned, sorted descending by score.
+
+### Deleting a skill
+
+```rust
+let deleted: bool = store.delete("deploy-web-app")?;
+// Cascades to skill_files
+```
+
+### Managing skill files (SkillFileStore)
+
+```rust
+let file_store = SkillFileStore::new(&database_path);
+
+file_store.store_file("deploy-web-app", "SKILL.md", "# Deploy Web App\n...")?;
+let content: Option<String> = file_store.get_file("deploy-web-app", "SKILL.md")?;
+let paths: Vec<String> = file_store.list_files("deploy-web-app")?;
+file_store.delete_file("deploy-web-app", "SKILL.md")?;
+file_store.delete_all_files("deploy-web-app")?;
+```
+
+</How>
+
+<Why>
+
+**Upsert with version bump.** Using `ON CONFLICT(name) DO UPDATE SET ... version = skills.version + 1` makes skill creation idempotent while providing a simple audit trail of how many times a skill has been revised. Callers don't need to check whether the skill exists before writing.
+
+**Trigger hints as weighted search signals.** The `trigger_hint` field exists specifically to give the `find_matching` scorer a high-weight signal. A skill author can describe the natural-language phrases that should invoke the skill without putting those phrases in the description or instructions.
+
+**Comma-separated tags.** Tags are stored as a comma-separated string rather than a junction table, keeping queries simple at the cost of requiring LIKE-based tag lookups. The skill count at typical Genesis installs is in the tens to low hundreds, so full-table scans are negligible.
+
+</Why>

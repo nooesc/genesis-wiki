@@ -1,14 +1,87 @@
 ---
 title: "genesis mcp"
-description: "MCP server management"
+description: "Inspect and manage configured MCP servers"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-mcp/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="mcp" usage="genesis mcp <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis mcp`?
+
+The `mcp` command manages Genesis's connections to Model Context Protocol (MCP) servers. MCP is an open standard that lets external tools, APIs, and data sources expose themselves as callable tools to an LLM agent. Genesis acts as an MCP client, connecting to whatever servers you configure and making their tools available to Eve alongside the builtin tool set.
+
+The `mcp` command gives you three things: a list of configured servers, a connectivity test, and the ability to expose Genesis itself as an MCP server on stdio. The last capability is how you connect Genesis to hosts like Claude Desktop — they spawn `genesis mcp serve` as a subprocess and communicate via stdin/stdout using the MCP protocol.
 
 </What>
+
+<How>
+
+## Sub-commands
+
+| Sub-command | Description |
+|-------------|-------------|
+| `list` | List all configured MCP servers and their connection status |
+| `test` | Test connectivity to all configured MCP servers |
+| `serve` | Run Genesis as an MCP server on stdio (for Claude Desktop, etc.) |
+
+## Examples
+
+**List configured MCP servers:**
+```bash
+genesis mcp list
+```
+
+**Test all server connections:**
+```bash
+genesis mcp test
+```
+
+**Run Genesis as an MCP server (used by Claude Desktop):**
+```bash
+genesis mcp serve
+```
+
+**List servers with JSON output for scripting:**
+```bash
+genesis --json mcp list
+```
+
+## Configuring MCP Servers
+
+MCP servers are configured in `~/.genesis/config.yaml` under the `mcp_servers` key:
+
+```yaml
+mcp_servers:
+  filesystem:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+  my-api:
+    url: "http://localhost:8080/mcp"
+```
+
+Each server entry requires either a `command` (for stdio-based servers) or a `url` (for HTTP-based servers).
+
+</How>
+
+<Why>
+
+## Why MCP?
+
+MCP decouples tool development from the agent runtime. Instead of every tool needing to be compiled into Genesis as a Rust crate, teams can write MCP servers in any language and connect them at runtime. This is particularly useful for organization-specific tools, internal APIs, or rapidly changing integrations that would be cumbersome to maintain as compiled builtins.
+
+Genesis's `McpManager` handles connection lifecycle automatically: it connects to each configured server on startup, tracks connection status, and auto-reconnects on transport failures or timeouts. The `mcp test` command runs the same connectivity probe that the startup sequence uses, letting you diagnose configuration problems before starting a full chat session.
+
+The `mcp serve` sub-command runs the reverse direction: Genesis exposes its own 60+ builtin tools through the MCP protocol over stdio. This lets any MCP host (Claude Desktop, Continue, Cursor) call Genesis tools without any API server.
+
+</Why>
+
+</CliCommand>

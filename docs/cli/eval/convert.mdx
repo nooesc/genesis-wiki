@@ -1,13 +1,56 @@
 ---
 title: "eval convert"
-description: "Convert between formats"
-last_synced_commit: "0000000"
+description: "Convert between trajectory JSON, ChatML JSONL, and ShareGPT JSONL"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval convert" usage="genesis eval convert --input <FILE> --output <FILE> --format <FORMAT>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval convert`?
+
+The `convert` command converts a single file between any of the three supported trajectory formats: Genesis trajectory JSON, ChatML JSONL, and ShareGPT JSONL. Unlike `export-chatml` or `export-sharegpt` (which operate on directories), `convert` is file-to-file and lets you specify the target format explicitly. This makes it convenient for one-off format conversions without scanning a whole directory.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `--input <FILE>` | `string` | Yes | Input file to convert |
+| `--output <FILE>` | `string` | Yes | Output file to write |
+| `--format <FORMAT>` | `string` | Yes | Target format: `json`, `chatml`, or `sharegpt` |
+
+## Examples
+
+```bash
+# Convert a trajectory JSON file to ChatML JSONL
+genesis eval convert --input ./session.json --output ./session.jsonl --format chatml
+
+# Convert a ShareGPT JSONL file to Genesis trajectory JSON
+genesis eval convert --input ./sharegpt.jsonl --output ./trajectory.json --format json
+
+# Convert a ChatML JSONL file to ShareGPT JSONL
+genesis eval convert --input ./chatml.jsonl --output ./sharegpt.jsonl --format sharegpt
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+`convert` uses the same serialization and deserialization logic as the import/export commands but operates on individual files rather than directories. The source format is inferred from the file extension and structure of the input file — `.json` files are assumed to be Genesis trajectory format, `.jsonl` files are assumed to be either ChatML or ShareGPT (detected by inspecting the first line). If the input and output formats are the same, the file is round-tripped through the internal representation, which normalizes any structural inconsistencies.
+
+</Why>
+
+</CliCommand>

@@ -1,14 +1,75 @@
 ---
 title: "genesis completions"
-description: "Shell completions"
+description: "Generate shell tab-completion scripts"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="completions" usage="genesis completions <SHELL>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis completions`?
+
+The `completions` command generates a shell completion script for the specified shell. Once installed, pressing Tab while typing a `genesis` command will autocomplete sub-command names, flags, and option values. Completions are supported for bash, zsh, fish, elvish, and PowerShell.
 
 </What>
+
+<How>
+
+## Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `SHELL` | Shell to generate completions for: `bash`, `zsh`, `fish`, `elvish`, `powershell` |
+
+## Examples
+
+**Install completions for zsh:**
+```bash
+genesis completions zsh > ~/.zfunc/_genesis
+# Then add to ~/.zshrc if not already present:
+# fpath=(~/.zfunc $fpath)
+# autoload -Uz compinit && compinit
+```
+
+**Install completions for bash:**
+```bash
+genesis completions bash > /etc/bash_completion.d/genesis
+# Or for user-local install:
+genesis completions bash > ~/.local/share/bash-completion/completions/genesis
+```
+
+**Install completions for fish:**
+```bash
+genesis completions fish > ~/.config/fish/completions/genesis.fish
+```
+
+**Install completions for PowerShell:**
+```powershell
+genesis completions powershell >> $PROFILE
+```
+
+**Install completions for elvish:**
+```bash
+genesis completions elvish > ~/.config/elvish/lib/genesis.elv
+```
+
+</How>
+
+<Why>
+
+## Implementation
+
+Completions are generated at runtime by the `clap_complete` crate using the full command tree defined in `Cli`. This means completions are always in sync with the installed binary — no separate maintenance of completion files is needed. When a new sub-command or flag is added to Genesis, completions automatically include it on the next `genesis completions` run.
+
+The script is printed to stdout so you can redirect it to the appropriate location for your system or shell configuration. Most package managers install completions automatically; this command is for users who installed Genesis from source via `cargo install`.
+
+</Why>
+
+</CliCommand>

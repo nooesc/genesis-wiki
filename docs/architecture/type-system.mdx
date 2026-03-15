@@ -4,13 +4,160 @@ description: "Shared types and enums"
 crate: genesis-types
 source_files:
   - crates/genesis-types/src/lib.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Type System?
+
+`genesis-types` is the foundation crate — a pure vocabulary with no dependencies on any other Genesis crate. It defines the types that the entire system uses to talk to itself: how to represent a conversation role, which platform a message came from, which LLM provider to use, what a tool looks like, and what events the agent emits as it runs.
+
+Think of it as a shared dictionary. Without it, `genesis-core` would need to know about `genesis-storage`'s representation of a message role, or `genesis-gateway` would need to know about `genesis-provider`'s idea of a platform. By defining these types once in a crate with no internal dependencies, every other crate can import and use them without creating circular dependencies.
+
+Every type in this crate derives `Serialize` and `Deserialize`, making them safe to pass over HTTP, persist to SQLite as JSON, or log as structured events. They also all derive `Clone`, `Debug`, and `PartialEq`, making them easy to work with in tests. Nothing here contains business logic — these are pure data containers.
 
 </What>
+
+<How>
+
+## `ConversationRole` and `ConversationMessage`
+
+```rust
+pub enum ConversationRole {
+    System,     // Instructions to the model (invisible to user)
+    User,       // Human input
+    Assistant,  // Model output
+    Tool,       // Tool execution result
+}
+
+pub struct ConversationMessage {
+    pub role: ConversationRole,
+    pub content: String,
+}
+```
+
+These are the primitive building blocks of a conversation. They serialize with snake_case names (`"system"`, `"user"`, `"assistant"`, `"tool"`), matching the OpenAI wire format exactly.
+
+## `DeliveryPlatform`
+
+```rust
+pub enum DeliveryPlatform {
+    Cli,
+    Api,
+    Telegram,
+    Discord,
+    Slack,
+    HomeAssistant,
+    WhatsApp,
+    Signal,
+}
+```
+
+Identifies the channel through which a message was delivered. The `SystemPromptBuilder` uses this to inject platform-aware hints into the system prompt (e.g. Telegram bots should format responses differently than CLI sessions). The gateway uses it to route responses to the correct webhook handler. All variants serialize as snake_case strings.
+
+## `ModelSelection` and `ModelProviderKind`
+
+```rust
+pub enum ModelProviderKind {
+    OpenAi,
+    OpenRouter,
+    Anthropic,
+    Gemini,
+    Local,
+    Compatible,   // Any OpenAI-compatible endpoint
+}
+
+pub struct ModelSelection {
+    pub provider: ModelProviderKind,
+    pub model: String,
+    pub base_url: Option<String>,
+}
+```
+
+Represents a fully specified model choice. `base_url` is `None` for cloud providers (their URLs are hardcoded in `genesis-provider`'s `resolve.rs`) and `Some(url)` for local models like Ollama or vLLM.
+
+## `ToolDefinition`
+
+```rust
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: Option<serde_json::Value>,  // JSON Schema object
+}
+```
+
+The canonical representation of a tool. Both built-in tools (`genesis-tools`) and MCP tools (`genesis-mcp`) are returned as `Vec<ToolDefinition>`. The `parameters` field is a raw JSON Schema value matching OpenAI's function-calling format. `#[serde(skip_serializing_if = "Option::is_none")]` omits it for tools with no parameters.
+
+## `RuntimeEvent`
+
+```rust
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum RuntimeEvent {
+    SessionStarted { session_id: String },
+    ModelSelected { provider: String, model: String },
+    SessionPlanned {
+        session_id: String,
+        platform: DeliveryPlatform,
+        provider: String,
+        model: String,
+    },
+    TokenStream { chunk: String },
+    ToolCallRequested { tool_name: String },
+    ToolCallCompleted { tool_name: String, success: bool },
+    SchedulerTick { job_id: String },
+    DeliveryQueued { platform: DeliveryPlatform, destination: String },
+}
+```
+
+Structured events that the agent runtime emits during execution. Tagged with `"event"` as the discriminant field, so they serialize as e.g. `{"event": "tool_call_completed", "tool_name": "shell", "success": true}`. Used for structured logging, telemetry, and SSE streaming.
+
+## Provider Turn Types
+
+```rust
+pub struct ProviderTurnRequest {
+    pub session_id: String,
+    pub model: ModelSelection,
+    pub messages: Vec<ConversationMessage>,
+    pub tools: Vec<ToolDefinition>,
+}
+
+pub struct ProviderTurnResponse {
+    pub message: ConversationMessage,
+    pub stop_reason: StopReason,  // end_turn | tool_call | max_tokens
+    pub usage: UsageStats,
+}
+
+pub struct UsageStats {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+}
+```
+
+High-level request/response envelope types used at the boundary between the agent loop and the provider layer.
+
+</How>
+
+<Why>
+
+## Why a Separate Types Crate?
+
+The alternative to a dedicated types crate is to define types in whichever crate first needs them and re-export them elsewhere. In practice this creates messy dependency cycles: `genesis-storage` wants to store `ConversationMessage`, `genesis-tools` wants to operate on `ToolDefinition`, and `genesis-provider` wants to produce `UsageStats`. If any of these defined the types they share with others, those others would have to depend on them, and circular dependency chains would quickly emerge.
+
+By placing shared types in a zero-dependency crate, every other crate can import them freely. The rule is simple: if a type is used by more than one crate, it belongs in `genesis-types`.
+
+## Why `serde_json::Value` for `ToolDefinition.parameters`?
+
+JSON Schema is itself a JSON document. Representing it as a typed Rust struct would require a full JSON Schema type library, which would be a heavy dependency for what amounts to a pass-through: the tool registry produces a JSON Schema for each tool's parameters, and the provider layer passes that schema verbatim to the LLM in the request body. Neither the type system nor the agent loop needs to understand the schema's contents — only the tool executor that validates incoming arguments needs that. Using `serde_json::Value` keeps the type lightweight and avoids requiring every crate that touches tool definitions to understand JSON Schema.
+
+## Why `DeliveryPlatform` in `genesis-types`?
+
+`DeliveryPlatform` is used in three very different parts of the system: `genesis-core` reads it to inject platform hints into system prompts, `genesis-storage` stores it as a session attribute, and `genesis-gateway` uses it to route webhook responses. None of these crates should depend on each other just to share this enum. Placing it in `genesis-types` lets all three use it without coupling.
+
+## Serialization Consistency
+
+All enums use `#[serde(rename_all = "snake_case")]`. This ensures that platform names, role names, stop reasons, and event names serialize as consistent, lowercase, underscore-separated strings regardless of which layer produces or consumes them. This consistency makes log parsing, database queries, and API responses predictable — `"home_assistant"` always means `DeliveryPlatform::HomeAssistant`, everywhere in the system.
+
+</Why>

@@ -1,7 +1,9 @@
 ---
-title: "Pairing Store"
-description: "Platform authorization"
+title: "PairingStore"
+description: "Code-based DM authorization for messaging platform users"
 crate: genesis-storage
+source_files:
+  - crates/genesis-storage/src/lib.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +11,98 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+`PairingStore` implements a code-based approval flow for authorizing users who contact the agent on messaging platforms (Telegram, Slack, Discord, WhatsApp). Rather than maintaining a static user allowlist, unknown users receive a one-time pairing code that the bot owner approves via the CLI or gateway API.
+
+**`pairing_approved` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `platform` | TEXT (PK part) | Platform name (`telegram`, `slack`, etc.) |
+| `user_id` | TEXT (PK part) | Platform-specific user identifier |
+| `user_name` | TEXT NOT NULL | Display name for the user |
+| `approved_at` | TEXT | Approval timestamp |
+
+**`pairing_pending` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `platform` | TEXT (PK part) | Platform name |
+| `code` | TEXT (PK part) | 8-character code from unambiguous alphabet (no 0/O, 1/I) |
+| `user_id` | TEXT NOT NULL | Platform-specific user identifier |
+| `user_name` | TEXT NOT NULL | Display name for the user |
+| `created_at` | TEXT | Creation timestamp |
+
+Codes expire after **1 hour** and at most **3 pending codes** are allowed per platform at a time.
 
 </What>
+
+<How>
+
+### Checking approval status
+
+```rust
+let store = PairingStore::new(&database_path);
+let approved: bool = store.is_approved("telegram", "12345678")?;
+```
+
+The platform webhook handlers call `is_approved` on every incoming message before routing it to the agent.
+
+### Generating a pairing code
+
+```rust
+let code: Option<String> = store.generate_code("telegram", "12345678", "Alice")?;
+// None if already approved or max pending codes reached
+// Some("ABCD1234") if a new code was generated
+```
+
+`generate_code` automatically cleans up expired codes (older than 1 hour) before checking the pending limit and inserting the new code. The code alphabet excludes ambiguous characters (0, O, 1, I) to make manual transcription error-free.
+
+### Approving a user
+
+```rust
+let approved: bool = store.approve("telegram", "ABCD1234")?;
+// true if code was valid and user is now approved
+// false if code not found or expired
+```
+
+`approve` looks up the code in `pairing_pending`, inserts the user into `pairing_approved`, and deletes the pending code — all in a single operation.
+
+### Listing users
+
+```rust
+// All approved users across all platforms
+let all: Vec<ApprovedUser> = store.list_approved(None)?;
+
+// Filtered by platform
+let tg_users: Vec<ApprovedUser> = store.list_approved(Some("telegram"))?;
+
+// Pending codes for a platform
+let pending: Vec<PendingPairing> = store.list_pending(Some("telegram"))?;
+```
+
+### Revoking a user
+
+```rust
+let revoked: bool = store.revoke("telegram", "12345678")?;
+```
+
+Deletes from `pairing_approved`. The user will receive a new pairing code on their next message.
+
+### Clearing pending codes
+
+```rust
+store.clear_pending(Some("telegram"))?; // platform-specific
+store.clear_pending(None)?;              // all platforms
+```
+
+</How>
+
+<Why>
+
+**Code-based flow over allowlists.** Static allowlists require the bot owner to know user IDs in advance and update config files. The pairing code flow lets users self-identify and get approved interactively, which is more practical for public-facing deployments.
+
+**Expiring codes.** The 1-hour TTL on pending codes prevents code accumulation from stale pairing attempts. Expired codes are cleaned up lazily on the next `generate_code` call, keeping the table small without a background job.
+
+**Unambiguous alphabet.** The pairing code alphabet (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`) excludes characters that look similar in common fonts (0/O, 1/I) so users can transcribe codes from screenshots without errors.
+
+</Why>

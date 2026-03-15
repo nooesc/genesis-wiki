@@ -1,14 +1,97 @@
 ---
 title: "genesis batch"
-description: "Parallel prompt execution"
+description: "Generate agent training trajectories from a JSONL prompt file"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="batch" usage="genesis batch --input <FILE> --output <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis batch`?
+
+The `batch` command drives Eve through a list of prompts in parallel and saves each conversation as a trajectory JSON file. Trajectories are structured records of what the agent was asked, what tools it called, and what it produced — the raw material for fine-tuning and evaluation datasets.
+
+You supply a JSONL file where each line is a JSON object with a `prompt` field and an optional `tags` array. Genesis runs each prompt through the full agent loop, collects the resulting message history, and writes one trajectory file per prompt into the output directory. Concurrency is configurable so you can saturate your API rate limits without overwhelming them.
+
+Optional quality filtering and automatic tagging let you build clean datasets without manual curation.
 
 </What>
+
+<How>
+
+## Options
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--input <FILE>` | `string` | **(required)** JSONL file where each line is `{"prompt": ..., "tags": [...]}` |
+| `--output <DIR>` | `string` | **(required)** Output directory for saved trajectory files |
+| `--model <NAME>` | `string` | Override the model used for generation |
+| `--max-turns <N>` | `usize` | Override the maximum number of turns per prompt |
+| `--concurrency <N>` | `usize` | Maximum number of prompts to run concurrently |
+| `--toolset <NAME>` | `string` | Toolset distribution name (e.g. `full`, `development`, `research`, `safe`, `minimal`, `creative`, `ops`, `home-assistant`, `coding-agent`, `random`) |
+| `--quality-filter <F>` | `f64` | Discard trajectories whose quality score is below this threshold (0.0–1.0) |
+| `--auto-tag` | `bool` | Automatically tag generated trajectories based on content analysis |
+
+## Input File Format
+
+```jsonl
+{"prompt": "Write a Python function that reverses a linked list", "tags": ["coding", "python"]}
+{"prompt": "Explain the CAP theorem", "tags": ["distributed-systems"]}
+{"prompt": "Find all TODO comments in the codebase"}
+```
+
+## Examples
+
+**Basic batch run:**
+```bash
+genesis batch --input prompts.jsonl --output ./trajectories
+```
+
+**Use a specific model with concurrency:**
+```bash
+genesis batch --input prompts.jsonl --output ./data \
+  --model gpt-4.1 --concurrency 8
+```
+
+**Filter low-quality and auto-tag:**
+```bash
+genesis batch --input prompts.jsonl --output ./data \
+  --quality-filter 0.7 --auto-tag
+```
+
+**Coding-focused toolset:**
+```bash
+genesis batch --input coding_prompts.jsonl --output ./coding_data \
+  --toolset coding-agent --max-turns 20
+```
+
+</How>
+
+<Why>
+
+## Trajectory Format
+
+Each output file is a JSON document capturing the full session: the system prompt used, all messages (user, assistant, tool calls, tool results), model metadata, token counts, and any tags. This format is compatible with `genesis eval` for analysis and `genesis eval export-chatml` / `genesis eval export-sharegpt` for conversion to training formats.
+
+## Toolset Distributions
+
+The `--toolset` flag selects a named distribution of tools rather than exposing the full 60+ tool registry to the model. This is important for training: a model learning from trajectories where only a focused subset of tools are available will generalise better for that use case. The `random` distribution samples a different subset for each prompt, producing diverse training data.
+
+## Quality Scoring
+
+The quality scorer evaluates trajectories across six dimensions: task completion, tool use efficiency, response coherence, instruction following, error recovery, and conversation flow. Scores below the `--quality-filter` threshold are discarded before writing. This avoids polluting your dataset with failed or degenerate trajectories.
+
+## Auto-Tagging
+
+The `--auto-tag` flag runs the semantic tagger against each trajectory after generation. Tags encode the domain (coding, research, ops), tools used, and task type. These tags feed into `genesis eval summarize --tag` for filtered analysis and into `genesis eval filter --tag` for dataset curation.
+
+</Why>
+
+</CliCommand>

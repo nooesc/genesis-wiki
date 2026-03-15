@@ -1,16 +1,112 @@
 ---
 title: "Workflows"
-description: "Workflow engine"
+description: "Multi-step agent pipeline orchestration"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/workflow.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Workflow Engine?
+
+Workflows are sequential multi-step agent pipelines where each step's output can be used as input to subsequent steps. A `WorkflowDefinition` contains an ordered list of `WorkflowStep` objects, each with a prompt template, an optional model override, and an optional `max_turns` limit.
+
+Steps communicate via template variables: `{{input}}` refers to the original workflow input, and `{{step_name}}` refers to the output of any previous step. Steps can only reference steps that appeared earlier in the sequence — forward references are detected as a validation error.
+
+Each step produces a `StepResult` with its output text and token usage. A step can be marked `terminal: true` to make its output the workflow's final result regardless of how many steps follow. The aggregate `WorkflowResult` contains all step results, the final output, and total token counts.
 
 </What>
+
+<How>
+
+## Defining a Workflow
+
+```yaml
+# summarize_and_translate.yaml
+name: summarize_and_translate
+description: "Summarize a document, then translate the summary"
+steps:
+  - name: summarize
+    prompt: |
+      Summarize the following text in 3 bullet points:
+      {{input}}
+    max_turns: 2
+
+  - name: translate
+    prompt: |
+      Translate the following summary to Spanish:
+      {{summarize}}
+    model: openai/gpt-4o-mini
+    max_turns: 1
+```
+
+## Template Variables
+
+| Variable | Description |
+|----------|-------------|
+| `{{input}}` | The initial workflow input passed at execution time |
+| `{{step_name}}` | Output from the named step (only previous steps allowed) |
+
+## Validation
+
+`validate_workflow` checks for:
+- Empty step list
+- Empty step names or prompts
+- Duplicate step names
+- Forward references (a step referencing a later step's output)
+
+```rust
+let workflow = parse_workflow(yaml_str)?;
+let issues = validate_workflow(&workflow);
+if !issues.is_empty() {
+    for issue in &issues { eprintln!("Validation error: {issue}"); }
+}
+```
+
+## Prompt Rendering
+
+```rust
+let mut step_outputs: HashMap<String, String> = HashMap::new();
+
+for step in &workflow.steps {
+    let prompt = render_prompt(&step.prompt, &initial_input, &step_outputs);
+    // run agent with `prompt` ...
+    step_outputs.insert(step.name.clone(), agent_output);
+    if step.terminal { break; }
+}
+```
+
+## WorkflowResult
+
+```json
+{
+  "workflow_name": "summarize_and_translate",
+  "final_output": "- Se mejoró el rendimiento...",
+  "total_input_tokens": 1420,
+  "total_output_tokens": 340,
+  "step_results": [
+    { "step_name": "summarize", "output": "- Performance improved...", "input_tokens": 820, "output_tokens": 180 },
+    { "step_name": "translate", "output": "- Se mejoró el rendimiento...", "input_tokens": 600, "output_tokens": 160 }
+  ]
+}
+```
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Sequential execution only.** The current engine runs steps in order with no branching or parallel execution. This is intentional — sequential pipelines cover the majority of use cases (summarize → translate, extract → format, research → write) and are much easier to reason about and debug than DAG-based workflows.
+
+**Template variables over context injection.** Passing previous step outputs as `{{step_name}}` template variables keeps each step's prompt explicit and auditable. An alternative approach (injecting all previous outputs into the context automatically) would make prompts harder to reason about and could bloat context unnecessarily.
+
+**Per-step model overrides.** Different steps in a pipeline often warrant different models — a cheap fast model for extraction, a smarter model for synthesis. The `model` field on each step enables cost/quality optimization per step without changing the global model setting.
+
+**`terminal` flag for early exit.** Some workflows have a "check" step that should produce the final answer if the check passes, with subsequent refinement steps only running if needed. The `terminal` flag enables this pattern without requiring conditional logic in the workflow definition.
+
+</Why>

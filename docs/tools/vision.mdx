@@ -1,16 +1,77 @@
 ---
 title: "Vision"
-description: "Image analysis"
+description: "Image analysis via multimodal LLM"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/vision.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="vision" module="builtins/vision.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does vision Do?
+
+`vision` sends an image to an OpenAI-compatible vision endpoint and returns the model's textual analysis. The image can be a local file or a remote URL. Provide a `question` to guide the analysis (e.g., "What error does this screenshot show?" or "Transcribe the text in this image"). Without a question, the model describes the image in detail.
+
+Supported local file formats: PNG, JPG/JPEG, GIF, WebP, BMP, TIFF, SVG. Local files are base64-encoded and sent inline; files larger than 20 MB are rejected. Remote image URLs are passed directly.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `file_path` | `string` | Conditional | -- | Path to a local image file. Required if `image_url` is not provided |
+| `image_url` | `string` | Conditional | -- | URL of an image. Required if `file_path` is not provided |
+| `question` | `string` | No | `"Describe this image in detail..."` | Prompt sent alongside the image |
+| `model` | `string` | No | `"gpt-4o"` | Vision model to use |
+| `max_tokens` | `string` | No | `"1024"` | Maximum response tokens |
+| `api_base` | `string` | No | `$OPENAI_API_BASE` or `https://api.openai.com/v1` | API base URL |
+| `api_key` | `string` | No | `$OPENAI_API_KEY` | API key (falls back to env var) |
+
+## Example: Analyze a screenshot
+
+```json
+{
+  "name": "vision",
+  "arguments": {
+    "file_path": "/tmp/screenshot.png",
+    "question": "What error message is shown in this screenshot?"
+  }
+}
+```
+
+## Example: Analyze a remote image
+
+```json
+{
+  "name": "vision",
+  "arguments": {
+    "image_url": "https://example.com/diagram.png",
+    "question": "Describe the architecture shown in this diagram."
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Image Encoding
+
+Local files are read as raw bytes, base64-encoded using the standard alphabet, and embedded in the OpenAI `image_url` content part as a `data:<mime>;base64,<data>` URL. The MIME type is derived from the file extension. SVG files use `image/svg+xml`; all others use their standard `image/*` types.
+
+The 20 MB limit exists because many vision APIs reject larger payloads, and base64 encoding adds ~33% overhead. The file size is checked via `fs::metadata` before reading to avoid loading large files into memory only to reject them.
+
+The API key is looked up first in the `api_key` parameter, then in `OPENAI_API_KEY`. This allows the agent to use a different key for vision calls than for chat calls when the LLM provider does not support vision.
+
+</Why>
+
+</ToolRef>

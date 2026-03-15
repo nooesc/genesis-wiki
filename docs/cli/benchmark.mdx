@@ -1,14 +1,80 @@
 ---
 title: "genesis benchmark"
-description: "Provider latency benchmarking"
+description: "Benchmark provider latency with a simple completion request"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="benchmark" usage="genesis benchmark [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis benchmark`?
+
+The `benchmark` command measures the round-trip latency of your configured LLM provider by sending a minimal completion request and timing the response. It runs the request multiple times and reports per-run latency and the average, giving you a quick read on whether your provider connection is healthy and how fast it is from your current network location.
+
+This is useful when troubleshooting slow responses, comparing providers, or sanity-checking a new API endpoint or key before relying on it for a longer task.
 
 </What>
+
+<How>
+
+## Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--runs <N>` | `3` | Number of requests to run |
+| `--tool-provider` | off | Also benchmark the tool provider if one is configured separately |
+
+## Examples
+
+**Run a quick 3-request benchmark:**
+```bash
+genesis benchmark
+```
+
+**Run 10 requests for a more stable average:**
+```bash
+genesis benchmark --runs 10
+```
+
+**Benchmark both the main provider and the tool provider:**
+```bash
+genesis benchmark --tool-provider
+```
+
+**Get JSON output:**
+```bash
+genesis --json benchmark --runs 5
+```
+
+## Sample Output
+
+```
+Benchmarking openai / gpt-4.1-mini (3 runs)...
+  Run 1: 312ms
+  Run 2: 298ms
+  Run 3: 305ms
+  Average: 305ms
+```
+
+</How>
+
+<Why>
+
+## Implementation
+
+Each benchmark run sends a minimal chat completion request — a single-token system prompt and a one-word user message — to avoid measuring token generation time and focus on network and infrastructure latency. The timing covers the full request lifecycle from the HTTP call to the first complete response.
+
+The `--tool-provider` flag matters when your config specifies a separate `tool_provider` backend (common when routing tool calls to a faster or cheaper model). Benchmarking it independently lets you measure each path's latency rather than conflating them.
+
+Results are printed per-run and as an average. With `--json`, the output is a structured object suitable for logging or comparison scripts.
+
+</Why>
+
+</CliCommand>

@@ -1,7 +1,9 @@
 ---
-title: "Schedule Store"
-description: "Cron schedules"
+title: "ScheduleStore"
+description: "Cron job definitions and enabled/disabled state"
 crate: genesis-storage
+source_files:
+  - crates/genesis-storage/src/lib.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +11,80 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+`ScheduleStore` persists cron job definitions. The gateway scheduler runtime polls the enabled schedules every minute, evaluates whether their cron expression matches the current time, and fires them as agent tasks.
+
+**`schedules` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | Unique schedule identifier |
+| `cron_expression` | TEXT NOT NULL | Cron syntax (see below) |
+| `destination` | TEXT NOT NULL | Target session or platform identifier |
+| `prompt` | TEXT NOT NULL | Prompt sent to the agent when the schedule fires |
+| `enabled` | INTEGER NOT NULL | 1 = enabled, 0 = disabled (default 1) |
+| `created_at` | TEXT | ISO-8601 timestamp |
 
 </What>
+
+<How>
+
+### Creating a schedule
+
+```rust
+let store = ScheduleStore::new(&database_path);
+let schedule = store.create(
+    "daily-standup",
+    "0 9 * * 1-5",      // 9am Mon–Fri
+    "tg-12345",          // destination session
+    "Post daily stand-up reminder",
+)?;
+```
+
+### Listing schedules
+
+```rust
+let enabled: Vec<StoredSchedule> = store.list_enabled()?;
+let all: Vec<StoredSchedule> = store.list_all()?;
+```
+
+The scheduler runtime calls `list_enabled()` on every polling cycle and evaluates each schedule's cron expression against the current UTC time.
+
+### Enabling and disabling
+
+```rust
+let changed: bool = store.set_enabled("daily-standup", false)?;
+// Returns true if a row was updated
+```
+
+### Getting and deleting
+
+```rust
+let schedule: Option<StoredSchedule> = store.get("daily-standup")?;
+let deleted: bool = store.delete("daily-standup")?;
+```
+
+### Cron expression syntax
+
+The Genesis cron evaluator supports the following field syntax (5-field: minute hour dom month dow):
+
+| Token | Example | Meaning |
+|---|---|---|
+| `*` | `* * * * *` | Every value |
+| `N` | `30` | Exact value |
+| `*/N` | `*/15` | Every N units |
+| `N-M` | `9-17` | Range |
+| `N,M,P` | `1,3,5` | List |
+
+Fields: minute (0–59), hour (0–23), day-of-month (1–31), month (1–12), day-of-week (0–6, Sunday=0).
+
+</How>
+
+<Why>
+
+**Enabled flag.** Storing `enabled` as a column rather than deleting/recreating rows lets operators temporarily pause a schedule without losing its configuration. The API exposes `PATCH /schedules/{id}/enabled` for this.
+
+**Destination field.** The `destination` column is deliberately a free-text string rather than a foreign key to `sessions`. This lets schedules target platform sessions that may not exist yet at creation time (e.g., a Telegram chat session created lazily on first message).
+
+**No last-fired tracking.** The scheduler does not store when a schedule last fired. Instead, it uses a stateless evaluation: on each polling tick, it checks whether the current minute satisfies the cron expression. This keeps the store simple and makes schedules resilient to missed ticks — if the gateway was down, the schedule simply skips those cycles.
+
+</Why>

@@ -1,14 +1,77 @@
 ---
 title: "genesis info"
-description: "System overview"
+description: "Show system overview"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="info" usage="genesis info" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis info`?
+
+The `info` command prints a concise summary of your Genesis installation at a glance: the active profile, the configured LLM provider and model, the number of available tools (built-in and MCP), the number of saved sessions, the number of stored skills, and other key counters from the local database.
+
+It is the quickest way to get a snapshot of what Genesis knows and can do in the current environment — useful at the start of a work session to confirm you are pointing at the right model and have your expected tools available.
 
 </What>
+
+<How>
+
+## Options
+
+`genesis info` takes no options.
+
+## Examples
+
+**Show the system overview:**
+```bash
+genesis info
+```
+
+**Machine-readable JSON:**
+```bash
+genesis info --json
+```
+
+## Example Output
+
+```
+Genesis — Eve
+─────────────────────────────────
+Profile:       default
+Provider:      anthropic / claude-sonnet-4-6
+Tools:         63 builtin + 8 MCP (2 servers)
+Sessions:      142 saved
+Skills:        17 stored
+Memories:      84 stored
+Schedules:     3 active
+Config:        ~/.genesis/config.yaml
+Database:      ~/.genesis/genesis.db
+```
+
+</How>
+
+<Why>
+
+## Dashboard vs Doctor
+
+`info` and `doctor` serve complementary purposes. `info` answers "what does my Genesis setup look like right now?" — it reads live data from the database and config to give you counts and context. `doctor` answers "is anything broken?" — it validates configuration and optionally makes a live API call. Use `info` to orient yourself; use `doctor` to troubleshoot.
+
+## MCP Tool Count
+
+The tool count shown by `info` includes tools from connected MCP servers. If an MCP server is unreachable or not configured, the count reflects only built-in tools. This makes `info` a quick way to confirm that your MCP connections are active and contributing tools.
+
+## Global Context
+
+`info` is designed to be the first command you run when starting a new terminal session or returning to Genesis after a break. It aggregates data that would otherwise require several separate queries (`genesis model show`, `genesis sessions list`, `genesis tools`, etc.) into a single, fast summary.
+
+</Why>
+
+</CliCommand>

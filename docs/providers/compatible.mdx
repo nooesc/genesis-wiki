@@ -1,7 +1,10 @@
 ---
-title: "Compatible"
-description: "OpenAI-compatible endpoints"
+title: "OpenAI-Compatible Endpoints"
+description: "Self-hosted and proxy endpoints (vLLM, Ollama, LM Studio, etc.)"
 crate: genesis-provider
+source_files:
+  - crates/genesis-provider/src/resolve.rs
+  - crates/genesis-provider/src/client.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +12,72 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+Any server that implements the OpenAI Chat Completions API works with Genesis by setting a `base_url`. This includes:
+
+- **vLLM** — high-throughput inference server for open-source models
+- **Ollama** — local model runner for Llama, Mistral, Qwen, and others
+- **LM Studio** — desktop local inference server
+- **llama.cpp** — lightweight C++ inference with an HTTP server
+- **SGLang** — structured generation inference server
+- **Together AI**, **Fireworks AI**, **Groq**, **Cerebras** — cloud inference APIs
+
+For models served via these endpoints that embed tool calls in text (Hermes, Qwen, DeepSeek, etc.), a [tool call parser](./parsers) must be configured.
 
 </What>
+
+<How>
+
+### Pointing at a local server
+
+```yaml
+# ~/.genesis/config.yaml
+backend: openai
+model: llama-3.1-8b-instruct
+base_url: "http://localhost:11434/v1"
+# api_key_env not needed for local servers
+```
+
+Or for vLLM:
+
+```yaml
+backend: openai
+model: NousResearch/Hermes-3-Llama-3.1-8B
+base_url: "http://localhost:8000/v1"
+tool_call_parser: hermes
+```
+
+### Pointing at a cloud inference API
+
+```yaml
+backend: openai
+model: llama-3.3-70b-versatile
+base_url: "https://api.groq.com/openai/v1"
+api_key_env: GROQ_API_KEY
+```
+
+For Together AI:
+
+```yaml
+backend: openai
+model: meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo
+base_url: "https://api.together.xyz/v1"
+api_key_env: TOGETHER_API_KEY
+```
+
+### Authentication
+
+When `api_key_env` is set, the resolver reads that environment variable for the Bearer token. When it is not set, `OPENAI_API_KEY` is used as a fallback. For local servers that require no authentication, leaving `api_key_env` unset with `OPENAI_API_KEY` empty is fine — an empty key sends `Authorization: Bearer ` (empty), which most local servers ignore.
+
+### Resolver behavior for unknown backends
+
+Any backend name not recognized by the resolver (`openai`, `anthropic`, `gemini`, `openrouter`, `openai-codex`) defaults to the OpenAI base URL and `OPENAI_API_KEY`. A custom `base_url` overrides the default, so setting `base_url` with any backend name correctly routes to that endpoint.
+
+</How>
+
+<Why>
+
+**No special backend code for compatible endpoints.** Since OpenAI-compatible servers accept the exact same request format, the `openai` code path handles them unchanged. The only difference is the `base_url` and `api_key_env`. This means new compatible providers work immediately without any code changes to Genesis.
+
+**tool_call_parser as escape hatch.** Some models served via compatible endpoints (Hermes, Qwen, DeepSeek, GLM, etc.) do not use the standard `tool_calls` field and instead embed tool calls in text. The `tool_call_parser` config key provides a clean escape hatch for these models without requiring provider-specific code.
+
+</Why>

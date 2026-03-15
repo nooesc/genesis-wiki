@@ -1,16 +1,344 @@
 ---
 title: "Browser"
-description: "Browser automation"
+description: "Stateful browser automation via agent-browser CLI"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/browser.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="browser_navigate" module="builtins/browser.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does browser_navigate Do?
+
+`browser_navigate` opens a URL in a persistent browser session backed by the `agent-browser` CLI. Each Genesis session gets its own browser context, which persists across tool calls — cookies, localStorage, and authentication state carry over between navigations. If no session exists yet for the current context, one is created automatically.
+
+The response includes the final URL and page title after navigation completes. If the page title matches known bot-detection patterns (Cloudflare, captchas, etc.), a warning is included in the response.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `url` | `string` | Yes | The URL to navigate to |
+
+## Example
+
+```json
+{
+  "name": "browser_navigate",
+  "arguments": {
+    "url": "https://github.com/trending"
+  }
+}
+```
+
+**Response:**
+```json
+{"success": true, "url": "https://github.com/trending", "title": "Trending repositories on GitHub today"}
+```
+
+</How>
+
+<Why>
+
+## Session Lifecycle
+
+The `BrowserManager` maintains a `HashMap<session_id, SessionInfo>` behind a `Mutex`. On the first call, a new `agent-browser` daemon is started for the session. Each subsequent call reuses the existing session, and the last-activity timestamp is updated on every tool call. Sessions that have been inactive for more than 5 minutes (configurable via `BROWSER_INACTIVITY_TIMEOUT`) are cleaned up automatically.
+
+In cloud mode (when both `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID` are set), the tool provisions a Browserbase cloud browser instead of a local daemon and connects via the CDP URL. The `stealth_warning` field in the first-navigation response notes when proxies are not active.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="browser_snapshot" module="builtins/browser.rs" crate="genesis-tools">
+
+<What>
+
+## What Does browser_snapshot Do?
+
+`browser_snapshot` captures the current page's accessibility tree as text. This is the primary way to understand the current state of the browser — what elements are visible, their labels, and their accessibility refs (used with `browser_click` and `browser_type`). Compact mode (default) omits redundant structural nodes; set `full=true` for the complete tree.
+
+The snapshot is truncated at 8,000 characters.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `full` | `string` | No | `"false"` | Set `"true"` for the full accessibility tree without compaction |
+
+## Example
+
+```json
+{
+  "name": "browser_snapshot",
+  "arguments": {}
+}
+```
+
+</How>
+
+<Why>
+
+## Why Accessibility Trees Instead of Screenshots?
+
+Accessibility trees are text-based and token-efficient compared to screenshots. Each interactive element has a stable `@ref` identifier (e.g., `@button-42`) that can be passed directly to `browser_click` or `browser_type`. This avoids coordinate-based clicking, which is brittle on different viewport sizes.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="browser_click" module="builtins/browser.rs" crate="genesis-tools">
+
+<What>
+
+## What Does browser_click Do?
+
+`browser_click` clicks an element identified by its accessibility ref from a prior `browser_snapshot`. Refs can be passed with or without the leading `@` — the tool normalizes them automatically.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `ref` | `string` | Yes | Accessibility ref of the element to click, e.g. `@button-42` or `button-42` |
+
+## Example
+
+```json
+{
+  "name": "browser_click",
+  "arguments": {
+    "ref": "@button-submit"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The tool requires an active session (call `browser_navigate` first). The ref is normalized to include `@` via `normalize_ref()` before being passed to the `agent-browser click --ref` command.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="browser_type" module="builtins/browser.rs" crate="genesis-tools">
+
+<What>
+
+## What Does browser_type Do?
+
+`browser_type` fills an input element (text field, textarea, etc.) with the given text. It targets the element by its accessibility ref from a prior `browser_snapshot` and maps to the `agent-browser fill` command internally.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `ref` | `string` | Yes | Accessibility ref of the input element |
+| `text` | `string` | Yes | Text to type into the element |
+
+## Example
+
+```json
+{
+  "name": "browser_type",
+  "arguments": {
+    "ref": "@input-search",
+    "text": "Rust async patterns"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+`browser_type` maps to `agent-browser fill --ref <ref> --value <text>`. Unlike keyboard simulation, `fill` sets the element value directly and works reliably with React/Vue controlled inputs.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="browser_scroll" module="builtins/browser.rs" crate="genesis-tools">
+
+<What>
+
+## What Does browser_scroll Do?
+
+`browser_scroll` scrolls the current page up or down by a configurable number of pixels (default: 500). Use this to reveal content below the visible area before taking another snapshot.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `direction` | `string` | Yes | -- | Either `"up"` or `"down"` |
+| `pixels` | `string` | No | `"500"` | Number of pixels to scroll |
+
+## Example
+
+```json
+{
+  "name": "browser_scroll",
+  "arguments": {
+    "direction": "down",
+    "pixels": "800"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Maps to `agent-browser scroll --direction <direction> --pixels <pixels>`. An invalid `direction` returns an error immediately without invoking the CLI.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="browser_back" module="builtins/browser.rs" crate="genesis-tools">
+
+<What>
+
+## What Does browser_back Do?
+
+`browser_back` navigates the browser back one step in the history, equivalent to pressing the browser's back button. Requires an active session.
+
+</What>
+
+<How>
+
+## Parameters
+
+None required.
+
+## Example
+
+```json
+{
+  "name": "browser_back",
+  "arguments": {}
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Maps to `agent-browser back`. If there is no history to go back to, the page stays at the current URL and the command succeeds without error.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="browser_press" module="builtins/browser.rs" crate="genesis-tools">
+
+<What>
+
+## What Does browser_press Do?
+
+`browser_press` sends a keyboard key press to the browser. Use this for keys like `Enter`, `Escape`, `Tab`, `ArrowDown`, or keyboard shortcuts. Requires an active session.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | `string` | Yes | Key name, e.g. `"Enter"`, `"Escape"`, `"Tab"`, `"ArrowDown"` |
+
+## Example
+
+```json
+{
+  "name": "browser_press",
+  "arguments": {
+    "key": "Enter"
+  }
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Maps to `agent-browser press --key <key>`. Key names follow browser keyboard event key values.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="browser_close" module="builtins/browser.rs" crate="genesis-tools">
+
+<What>
+
+## What Does browser_close Do?
+
+`browser_close` closes the current browser session and releases all associated resources. The session is removed from the manager. In cloud mode, the Browserbase session is also released. After closing, a new navigation will create a fresh session.
+
+</What>
+
+<How>
+
+## Parameters
+
+None required.
+
+## Example
+
+```json
+{
+  "name": "browser_close",
+  "arguments": {}
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Calls `BrowserManager::close_session` for the current `session_id`. The close also runs `agent-browser close` to shut down the local browser daemon and clean up socket files. The `Drop` implementation on `BrowserManager` calls `close_all_sessions` to handle cleanup on process exit.
+
+</Why>
+
+</ToolRef>

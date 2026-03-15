@@ -1,7 +1,9 @@
 ---
-title: "Full-Text Search"
-description: "FTS5 implementation"
+title: "Full-Text Search (FTS5)"
+description: "FTS5 virtual tables, configuration, query syntax, and ranking"
 crate: genesis-storage
+source_files:
+  - crates/genesis-storage/src/lib.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +11,96 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+Genesis uses SQLite's FTS5 extension for full-text search across session content and memories. Two virtual tables are defined:
+
+**`session_search`** — indexes message content for session search:
+```sql
+CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(
+    session_id UNINDEXED,
+    content
+);
+```
+
+**`memory_search`** — indexes memory content (lazily created):
+```sql
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_search USING fts5(
+    memory_row_id UNINDEXED,
+    kind,
+    content
+);
+```
+
+The `UNINDEXED` modifier on `session_id` and `memory_row_id` means those columns are stored but not tokenized or indexed — they serve as lookup keys for joining back to the primary tables.
 
 </What>
+
+<How>
+
+### How indexing works
+
+When `append_message` is called with non-empty text content, it immediately inserts into `session_search`:
+
+```sql
+INSERT INTO session_search (session_id, content) VALUES (?, ?)
+```
+
+The FTS5 tokenizer (default `unicode61`) processes the content and builds the index. Tool-only messages (no text content) are not indexed.
+
+When a session is deleted, its FTS5 entries are deleted explicitly before the session row, since FTS5 virtual tables do not participate in foreign key cascades.
+
+### Querying sessions
+
+```rust
+store.search_sessions("weather Paris")?
+// Executes:
+// SELECT DISTINCT s.* FROM session_search ss
+// JOIN sessions s ON s.id = ss.session_id
+// WHERE session_search MATCH ?
+// ORDER BY rank
+```
+
+Results are ordered by FTS5's built-in `rank` column (BM25 relevance score, lower = more relevant).
+
+### Querying messages
+
+```rust
+store.search_messages("attention mechanisms", 10)?
+// Searches session_search, returns content snippets with session context
+```
+
+### FTS5 query syntax
+
+FTS5 supports these query forms:
+
+| Query | Meaning |
+|---|---|
+| `apple banana` | Rows containing both terms (implicit AND) |
+| `apple OR banana` | Rows containing either term |
+| `"apple banana"` | Exact phrase |
+| `apple*` | Prefix match (any term starting with "apple") |
+| `^apple` | Term must appear at start of a row |
+| `apple NOT banana` | Rows with "apple" but not "banana" |
+| `content: apple` | Search only the `content` column |
+
+Case is folded by the default `unicode61` tokenizer. Diacritics are NOT folded by default — `résumé` and `resume` are distinct terms unless the tokenizer is configured otherwise.
+
+### Memory search
+
+The `memory_search` table indexes both `kind` and `content` columns. Searches can target either:
+
+```
+kind: preference        -- find all preference-category memories
+content: Paris trip     -- find memories about Paris
+```
+
+</How>
+
+<Why>
+
+**FTS5 over LIKE.** A `LIKE '%query%'` scan requires reading every row and is O(n) with no index support. FTS5's inverted index makes text search O(k log n) where k is the number of matched terms. For users with thousands of messages, this is the difference between instant and sluggish search.
+
+**UNINDEXED for join keys.** Storing `session_id` and `memory_row_id` as UNINDEXED columns avoids tokenizing identifiers (UUIDs, platform IDs) which would pollute the term index with garbage tokens and slow down tokenization.
+
+**Lazy memory_search creation.** The `memory_search` table is created inside `MemoryStore::search()` with `CREATE VIRTUAL TABLE IF NOT EXISTS` rather than in `bootstrap()`. This keeps backward compatibility with databases created before memory search was added and avoids creating the FTS5 table for installs that never use memory search.
+
+</Why>

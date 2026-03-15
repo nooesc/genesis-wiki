@@ -8,6 +8,156 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+A tool is a Rust struct with a single method — `run()` — that the agent calls when it decides an action is needed. Adding a new tool means writing that struct, describing its parameters in JSON Schema so the LLM knows how to invoke it, and registering it in the global registry. Once registered, the tool is automatically available in every agent session, exposed via the `/tools` slash command, and listed in the HTTP API's `GET /tools` endpoint.
+
+The agent loop treats tools as black boxes: it passes a name and a map of string arguments, and gets back a string result or an error. Tools do not need to know anything about the LLM or the session — they just receive their arguments and return output.
 
 </What>
+
+<How>
+
+### Step 1 — Create the handler file
+
+Create a new file in `crates/genesis-tools/src/builtins/`. Name it after the tool:
+
+```
+crates/genesis-tools/src/builtins/my_tool.rs
+```
+
+### Step 2 — Implement `ToolHandler`
+
+```rust
+use std::collections::BTreeMap;
+use crate::{ToolCall, ToolContext, ToolError, ToolHandler, ToolOutput};
+
+pub struct MyTool;
+
+impl ToolHandler for MyTool {
+    fn run(&self, call: &ToolCall, context: &ToolContext) -> Result<ToolOutput, ToolError> {
+        // Pull arguments out of the BTreeMap<String, String>
+        let target = call
+            .arguments
+            .get("target")
+            .ok_or_else(|| ToolError::MissingArgument {
+                tool: call.name.clone(),
+                argument: "target",
+            })?;
+
+        // Do work here...
+        let result = format!("processed: {target}");
+
+        Ok(ToolOutput {
+            content: result,
+            metadata: BTreeMap::from([("tool".to_owned(), call.name.clone())]),
+        })
+    }
+}
+```
+
+Key types:
+
+| Type | Description |
+|---|---|
+| `ToolCall` | `{ name: String, arguments: BTreeMap<String, String> }` |
+| `ToolContext` | Session ID, data dir, destructive flag, terminal backend |
+| `ToolOutput` | `{ content: String, metadata: BTreeMap<String, String> }` |
+| `ToolError::MissingArgument` | Required argument was absent |
+| `ToolError::ExecutionFailed` | Runtime failure with a reason string |
+
+Long output should be truncated: `use crate::truncate_output; Ok(ToolOutput { content: truncate_output(&raw), .. })`. The limit is 64 KiB (`MAX_OUTPUT_BYTES`).
+
+### Step 3 — Declare the module
+
+Open `crates/genesis-tools/src/builtins/mod.rs` and add:
+
+```rust
+pub mod my_tool;
+```
+
+### Step 4 — Register in `default_registry()`
+
+Open `crates/genesis-tools/src/lib.rs`, find `pub fn default_registry()`, and add a `.register()` call in the chain:
+
+```rust
+use serde_json::json;
+// (already imported at the top of the file)
+
+registry.register(
+    ToolDefinition {
+        name: "my_tool".to_owned(),
+        description: "One sentence describing what this tool does.".to_owned(),
+        parameters: Some(json!({
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "The thing to process."
+                }
+            },
+            "required": ["target"]
+        })),
+    },
+    ApprovalPolicy::Never,   // or Destructive / Always
+    builtins::my_tool::MyTool,
+);
+```
+
+`ApprovalPolicy::Destructive` gates the tool behind `allow_destructive_tools` config. `ApprovalPolicy::Always` prompts the user for confirmation on every call.
+
+### Step 5 — Write tests
+
+Add a `#[cfg(test)] mod tests` block at the bottom of `my_tool.rs`. Use the minimal `ToolContext` helper and call `run()` directly:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ToolContext;
+
+    fn ctx() -> ToolContext {
+        ToolContext {
+            session_id: "test".to_owned(),
+            profile: "test".to_owned(),
+            data_dir: "/tmp".to_owned(),
+            allow_destructive_tools: true,
+            terminal_backend: None,
+            default_working_dir: None,
+            sandbox_manager: None,
+        }
+    }
+
+    #[test]
+    fn my_tool_returns_expected_output() {
+        let tool = MyTool;
+        let call = ToolCall {
+            name: "my_tool".to_owned(),
+            arguments: BTreeMap::from([
+                ("target".to_owned(), "hello".to_owned()),
+            ]),
+        };
+        let output = tool.run(&call, &ctx()).expect("should succeed");
+        assert!(output.content.contains("hello"));
+    }
+}
+```
+
+### Step 6 — Verify
+
+```bash
+cargo test -p genesis-tools          # all tool tests
+cargo clippy -p genesis-tools -- -D warnings
+```
+
+</How>
+
+<Why>
+
+The `ToolHandler` trait is synchronous (`fn run`) despite the rest of the codebase being async. This is an intentional trade-off: keeping tool execution synchronous avoids the complexity of async trait objects (which require `Box<dyn Future>` boxing) and allows tools to use standard library primitives like `std::process::Command` without `.await` noise. The execution service spawns tool calls on a blocking thread pool (`tokio::task::spawn_blocking`) when needed.
+
+All arguments arrive as `BTreeMap<String, String>` regardless of the JSON Schema type declared for them. The LLM serialises its arguments to strings before handing them to the registry. Tools are responsible for parsing (e.g. `id_str.parse::<usize>()`).
+
+Tool output is capped at 64 KiB (`MAX_OUTPUT_BYTES`) with a UTF-8-safe truncation that cuts at a newline boundary. This prevents a single noisy tool response from consuming the entire context window and crowding out the conversation history.
+
+The registry uses a `BTreeMap` (sorted by tool name) so that `definitions()` returns tools in alphabetical order — this produces stable, deterministic tool lists in the system prompt, which helps with prompt caching on providers like Anthropic that cache based on a common prefix.
+
+</Why>

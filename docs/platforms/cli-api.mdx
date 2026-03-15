@@ -1,14 +1,100 @@
 ---
 title: "CLI and API"
-description: "CLI and HTTP API platforms"
+description: "CLI and HTTP API as delivery platforms"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/lib.rs
+  - crates/genesis-cli/src/commands/chat.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## CLI and HTTP API as Delivery Platforms
+
+Genesis has two first-party delivery surfaces that are distinct from the messaging platform integrations: the **CLI** and the **HTTP API**. Both route through the same `SessionExecutionService` as Telegram, Discord, and other platforms, but they differ significantly in how they present input and output.
+
+**CLI (`genesis chat`)**: An interactive terminal session. The user types messages directly. Responses stream in real time to the terminal. The session is keyed to the terminal session; there is no persistent chat ID unless `--session` is passed explicitly. The `DeliveryPlatform` is set to `Cli`, which tells the `SystemPromptBuilder` to include terminal-specific hints.
+
+**HTTP API (`POST /chat`, `POST /chat/stream`)**: A programmatic interface for integrations, scripts, and third-party clients. The blocking `/chat` endpoint waits for the full response. The streaming `/chat/stream` endpoint uses SSE (Server-Sent Events) to push partial responses as they are generated. Both endpoints accept `session_id`, `images`, `system_prompt`, `response_format`, and `model` override fields.
+
+The key difference between CLI/API and the messaging platforms is that CLI and API are **direct** — there is no intermediary messaging service. The caller sends the prompt, gets the response, and manages session lifecycle themselves.
 
 </What>
+
+<How>
+
+## CLI Usage
+
+```bash
+# Interactive session
+genesis chat
+
+# Single-turn with session continuity
+genesis chat --session my-project "What files are in the current directory?"
+
+# With a model override
+genesis chat --model anthropic/claude-opus-4 "Explain this codebase"
+
+# With an image
+genesis chat --image screenshot.png "What's wrong with this UI?"
+```
+
+## HTTP API
+
+**Blocking chat:**
+```
+POST /chat
+Content-Type: application/json
+
+{
+  "message": "Summarize the last 5 commits",
+  "session_id": "my-session",
+  "model": "openai/gpt-4o"
+}
+```
+
+**Streaming chat (SSE):**
+```
+POST /chat/stream
+Content-Type: application/json
+
+{ "message": "Write a Rust function to sort a Vec<String>" }
+```
+
+SSE events are emitted as:
+```
+data: {"type":"text_delta","content":"Here is a..."}
+data: {"type":"tool_call","tool":"shell_exec","args":{"command":"cargo build"}}
+data: {"type":"done","response":"...","turns_used":3,"tool_calls_made":2}
+```
+
+## Platform Field
+
+Both endpoints accept a `platform` field (default: `"api"`). This is stored as `session_platform` and affects session grouping in the sessions list. It does not change agent behavior.
+
+## Response Format Control
+
+The `response_format` field accepts:
+- `{"type": "json_object"}` — agent is instructed to return valid JSON
+- `{"type": "json_schema", "json_schema": {...}}` — structured output with a schema
+- `{"type": "text"}` — plain text (default)
+
+</How>
+
+<Why>
+
+## How CLI and API Differ from Messaging Platforms
+
+Messaging platforms (Telegram, Slack, Discord, etc.) have several constraints that the CLI and API do not:
+
+- **Delivery is async.** Telegram requires a 200 OK immediately; the reply comes later via Bot API. CLI and API are synchronous — the connection stays open until the response is ready (or SSE stream ends).
+- **Message size limits.** Telegram truncates at 4096 characters; Discord at 2000. The CLI and HTTP API have no such limits — responses are returned in full.
+- **Session management.** Messaging platforms create sessions automatically from chat IDs. CLI and API sessions are explicitly managed by the caller via `session_id`.
+- **Pairing not required.** CLI and API bypass the DM pairing system entirely; they are protected by the gateway's API key authentication instead.
+
+The shared `SessionExecutionService` means all these surfaces get identical agent behavior — the same tools, memory, skills, and guardrails — regardless of how the request arrived.
+
+</Why>

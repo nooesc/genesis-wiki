@@ -1,7 +1,12 @@
 ---
 title: "DeepSeek"
-description: "DeepSeek provider"
+description: "DeepSeek provider configuration, model support, and tool call parsing"
 crate: genesis-provider
+source_files:
+  - crates/genesis-provider/src/resolve.rs
+  - crates/genesis-provider/src/model_metadata.rs
+  - crates/genesis-provider/src/pricing.rs
+  - crates/genesis-provider/src/parsers.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +14,80 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+DeepSeek models use the OpenAI-compatible API format. The `deepseek` backend resolves to `https://api.deepseek.com/v1` (which is OpenAI-compatible) or can be pointed at a custom endpoint for self-hosted deployments. DeepSeek models embed tool calls in text content rather than using native tool_calls fields — requiring a specialized parser.
+
+**Supported models (with known metadata):**
+
+| Model | Context | Max output | Vision | Thinking |
+|---|---|---|---|---|
+| `deepseek-v3` | 128,000 | 8,192 | No | No |
+| `deepseek-r1` | 128,000 | 8,192 | No | Yes |
+
+**Pricing (USD per million tokens, as of early 2026):**
+
+| Model | Input | Output |
+|---|---|---|
+| `deepseek-chat` | $0.27 | $1.10 |
+| `deepseek-v3` | $0.27 | $1.10 |
+| `deepseek-r1` | $0.55 | $2.19 |
+| `deepseek-reasoner` | $0.55 | $2.19 |
 
 </What>
+
+<How>
+
+### Configuration
+
+DeepSeek's official API is OpenAI-compatible. Point Genesis at it with a custom base URL:
+
+```yaml
+backend: openai
+model: deepseek-chat
+base_url: "https://api.deepseek.com/v1"
+api_key_env: DEEPSEEK_API_KEY
+```
+
+Or via OpenRouter (no custom URL needed):
+
+```yaml
+backend: openrouter
+model: deepseek/deepseek-chat
+```
+
+### Tool call parser
+
+DeepSeek V3 and V3.1 embed tool calls in text content using fullwidth Unicode delimiter tokens rather than the standard `tool_calls` field. Genesis auto-detects and handles two DeepSeek formats:
+
+**DeepSeek V3 format:**
+````text
+<|tool▁calls▁begin|>
+<|tool▁call▁begin|>function<|tool▁sep|>get_weather
+```json
+{"location": "Paris"}
+```
+<|tool▁call▁end|>
+<|tool▁calls▁end|>
+````
+
+**DeepSeek V3.1 format** (no markdown code block):
+````text
+<|tool▁call▁begin|>get_weather<|tool▁sep|>{"location": "Paris"}<|tool▁call▁end|>
+````
+
+Configure explicitly or let auto-detection handle it:
+
+```yaml
+tool_call_parser: deepseek_v3   # or deepseek_v31
+```
+
+Auto-detection checks for `deepseek` + (`v3.1` or `v31`) in the model name for V3.1, and `deepseek` alone for V3.
+
+</How>
+
+<Why>
+
+**Generic backend, custom URL.** DeepSeek's API is OpenAI-compatible, so rather than adding a `deepseek` named backend to the resolver, users configure it as `backend: openai` with `base_url` pointing at DeepSeek. This keeps the resolver simple and works the same way for any other OpenAI-compatible provider.
+
+**Two DeepSeek parser variants.** V3 and V3.1 differ in whether tool arguments are wrapped in a markdown code block. Maintaining separate parsers (`deepseek_v3` and `deepseek_v31`) ensures both formats parse correctly without fragile conditional logic in a single parser.
+
+</Why>

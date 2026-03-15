@@ -1,16 +1,114 @@
 ---
 title: "Memory"
-description: "Memory storage/retrieval"
+description: "Persistent key-value memory with full-text search"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/memory.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="memory_store" module="builtins/memory.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does memory_store Do?
+
+`memory_store` writes a key-value pair into the agent's persistent memory database. The `key` acts as a category or type label (e.g., `"user_preference"`, `"project_goal"`, `"note"`), and `value` holds the content. Memories survive across sessions and can be retrieved later with `memory_recall`. Each call appends a new memory row — it does not overwrite previous entries with the same key.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | `string` | Yes | Category or type label for the memory |
+| `value` | `string` | Yes | Content to store |
+
+## Example
+
+```json
+{
+  "name": "memory_store",
+  "arguments": {
+    "key": "user_preference",
+    "value": "Prefers concise responses with code examples"
+  }
+}
+```
+
+**Response:**
+```
+stored memory `user_preference`
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Each memory is stored in the `memories` SQLite table with a generated ID, the current `session_id`, the key as `kind`, and the value as `content`. A corresponding row is also inserted into the FTS5 virtual table `memory_search` (indexing `kind` and `content`) to enable full-text recall.
+
+The `ensure_memory_search_index` helper creates the FTS5 table with `IF NOT EXISTS`, making the first call idempotent. Memory IDs include the session ID, key, and a nanosecond timestamp to make them unique.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="memory_recall" module="builtins/memory.rs" crate="genesis-tools">
+
+<What>
+
+## What Does memory_recall Do?
+
+`memory_recall` searches stored memories using SQLite FTS5 full-text search and returns the most relevant results for a query. Results are ranked by relevance (FTS5's `rank` column) and each entry is formatted as `[key] value (created_at)`. Returns at most 5 results by default.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | `string` | Yes | -- | Full-text search query across memory keys and values |
+| `limit` | `string` | No | `"5"` | Maximum number of memories to return |
+
+## Example
+
+```json
+{
+  "name": "memory_recall",
+  "arguments": {
+    "query": "user preferences",
+    "limit": "3"
+  }
+}
+```
+
+**Response:**
+```
+[user_preference] Prefers concise responses with code examples (2026-03-15 10:42:00)
+[user_preference] Uses dark mode in all editors (2026-03-10 09:15:00)
+```
+
+</How>
+
+<Why>
+
+## Full-Text Search with FTS5
+
+The recall query uses SQLite FTS5's `MATCH` operator with the `rank` ordering provided by FTS5's built-in BM25 scoring. This means results are sorted by relevance to the query terms, not by insertion time.
+
+The query searches across both the `kind` (key) and `content` (value) columns, so searching for `"rust"` will match both memories categorized as `"rust"` and memories whose value contains the word "rust".
+
+If no memories match, the tool returns `"no memories found"` rather than an empty string.
+
+</Why>
+
+</ToolRef>

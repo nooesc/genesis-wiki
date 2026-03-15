@@ -1,16 +1,100 @@
 ---
 title: "Embeddings"
-description: "Vector embeddings"
+description: "Vector embeddings and hybrid semantic memory search"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/embedding.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What are Embeddings?
+
+The embedding module adds semantic search to Genesis's memory system. It provides an `EmbeddingProvider` that calls any OpenAI-compatible `/v1/embeddings` endpoint to convert text into dense float vectors, and a `hybrid_search` function that combines those vectors with SQLite FTS5 keyword results to return the most relevant memories for a query.
+
+Three search modes are available:
+
+| Mode | Description |
+|------|-------------|
+| `keyword` | FTS5 full-text search only. Always available, no API calls. |
+| `vector` | Cosine similarity against stored embeddings only. Requires a configured provider. |
+| `hybrid` | FTS5 and vector results merged via Reciprocal Rank Fusion (RRF). |
+
+Embeddings are stored in the `EmbeddingStore` (SQLite), linked to memory IDs. When a memory is saved and an embedding provider is configured, `embed_and_store` is called to compute and persist the vector alongside the memory text.
 
 </What>
+
+<How>
+
+## Configuration
+
+```yaml
+embedding:
+  backend: openai       # or openrouter, azure, local vLLM, etc.
+  model: text-embedding-3-small
+  base_url: https://api.openai.com/v1
+  api_key_env: OPENAI_API_KEY
+  dimensions: 1536      # optional: validates returned vector length
+```
+
+The `EmbeddingProvider` reuses the same provider resolution logic as the main LLM client, so `backend`, `base_url`, and `api_key_env` behave identically.
+
+## Embedding Generation
+
+```rust
+let provider = EmbeddingProvider::from_config(&config)?;
+
+// Batch embed
+let vectors = provider.embed(&["hello world".to_owned(), "another text".to_owned()]).await?;
+
+// Single embed
+let vector = provider.embed_one("hello world").await?;
+```
+
+The request is a standard OpenAI `EmbeddingRequest` with `model`, `input`, and an optional `dimensions` field. Responses are validated against the configured `dimensions` value and will return `EmbeddingError::DimensionMismatch` if the API returns a different size.
+
+## Hybrid Search
+
+```rust
+let results = hybrid_search(
+    "rust async concurrency",
+    10,                      // limit
+    SearchMode::Hybrid,
+    &memory_store,
+    &embedding_store,
+    Some(&provider),
+).await?;
+
+for hit in results {
+    println!("{} ({}) score={:.4}", hit.memory.id, hit.source, hit.score);
+}
+```
+
+In `Hybrid` mode, `hybrid_search` runs FTS5 and vector search in parallel at `2 × limit` each, then merges the ranked lists with RRF. A document appearing in both lists receives score contributions from each: `1 / (60 + rank_fts) + 1 / (60 + rank_vector)`. The constant `k = 60` dampens the effect of top ranks so that documents appearing across both lists rank above documents that only appear in one.
+
+`ScoredMemory` records the final score and a `source` tag: `"fts"`, `"vector"`, or `"hybrid"`.
+
+## Cosine Similarity
+
+`cosine_similarity(a, b)` computes the dot product divided by the product of L2 norms, returning a value in `[-1, 1]`. Returns `0.0` for empty or mismatched-length vectors rather than panicking.
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**OpenAI-compatible API only.** The embedding provider targets the `/v1/embeddings` endpoint, which is implemented by OpenAI, Azure OpenAI, OpenRouter, and every major local inference server (vLLM, Ollama, LM Studio). This gives broad backend coverage without requiring a separate embedding-specific HTTP client.
+
+**FTS5 as the default, embeddings as opt-in.** Keyword search via SQLite FTS5 works with zero configuration and no external API calls. Vector and hybrid modes are only activated when an embedding provider is configured. This makes the memory system fully functional out of the box while allowing users who configure an embedding API to get better semantic recall.
+
+**Reciprocal Rank Fusion over score normalization.** Combining FTS5 BM25 scores with cosine similarity scores directly requires normalizing two incompatible scales. RRF avoids this by using only rank positions: each document gets `1 / (k + rank)` from each list it appears in. This is simpler, more robust to score distribution differences, and empirically competitive with weighted fusion approaches.
+
+**Dimension validation.** When `dimensions` is set in config, every embedding returned by the API is checked against that value. This catches silent model mismatches — for example, if the model name changes and the new model produces vectors of a different size — before inconsistent embeddings reach the store.
+
+**`embed_and_store` as a one-call helper.** The pattern of embedding a memory and immediately persisting it repeats everywhere a memory is created. Encapsulating this as a single async function keeps call sites clean and ensures the embedding model name is always recorded alongside the vector, enabling future model-aware re-indexing.
+
+</Why>

@@ -1,7 +1,9 @@
 ---
-title: "User Model Store"
-description: "User trait modeling"
+title: "UserModelStore"
+description: "User trait observations with confidence scores for personalization"
 crate: genesis-storage
+source_files:
+  - crates/genesis-storage/src/lib.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +11,86 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+`UserModelStore` records observations about the user that Eve learns over time — preferences, personality traits, communication style, expertise level, goals, and context. Each observation is stored as a `(trait_key, category, value)` triple with a `confidence` score that grows with repeated observations.
+
+**`user_model` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `trait_key` | TEXT PK | Unique observation key (e.g., `prefers_concise_answers`) |
+| `category` | TEXT NOT NULL | `preference`, `personality`, `communication_style`, `goal`, `expertise`, `context` |
+| `value` | TEXT NOT NULL | Observed value for this trait |
+| `confidence` | REAL | 0.0–1.0, starts at 0.5, increases by 0.1 per repeat observation, capped at 1.0 |
+| `evidence_count` | INTEGER | Number of times this trait has been observed |
+| `source_session` | TEXT | Session that most recently contributed evidence |
+| `created_at` | TEXT | ISO-8601 timestamp |
+| `updated_at` | TEXT | Updated on each observe() call |
 
 </What>
+
+<How>
+
+### Recording an observation
+
+```rust
+let store = UserModelStore::new(&database_path);
+let trait = store.observe(
+    "prefers_bullet_points",
+    "communication_style",
+    "true",
+    Some("session-abc"),
+)?;
+// First observe: confidence = 0.5, evidence_count = 1
+// Second observe (same key): confidence = 0.6, evidence_count = 2
+```
+
+The upsert query increments confidence by 0.1 and caps it at 1.0:
+```sql
+ON CONFLICT(trait_key) DO UPDATE SET
+    value = excluded.value,
+    confidence = MIN(1.0, user_model.confidence + 0.1),
+    evidence_count = user_model.evidence_count + 1,
+    ...
+```
+
+### Getting traits
+
+```rust
+let trait: Option<StoredUserTrait> = store.get("prefers_bullet_points")?;
+let all: Vec<StoredUserTrait> = store.list_all()?;
+// Ordered by confidence DESC, evidence_count DESC
+
+let style_traits: Vec<StoredUserTrait> = store.list_by_category("communication_style")?;
+
+// For system prompt injection — only high-confidence traits
+let confident: Vec<StoredUserTrait> = store.confident_traits(0.7)?;
+```
+
+### Deleting a trait
+
+```rust
+let deleted: bool = store.delete("prefers_bullet_points")?;
+```
+
+### Rendering traits for system prompts
+
+```rust
+let markdown: Option<String> = format_user_traits(&traits);
+// Returns grouped markdown like:
+// ## communication_style
+// - **prefers_bullet_points**: true (confidence: 70%, 2 observations)
+```
+
+`format_user_traits` is a standalone function (not a method) that groups traits by category and formats them as a markdown section for injection into the system prompt.
+
+</How>
+
+<Why>
+
+**Confidence accumulation.** Starting at 0.5 and increasing by 0.1 per corroborating observation means a trait reaches "high confidence" (0.7) after 3 consistent observations and is effectively certain (1.0) after 6. This prevents a single mistaken observation from dominating the model.
+
+**Threshold-based prompt injection.** The `confident_traits(threshold)` method lets the system prompt builder include only well-evidenced traits. This prevents speculative or low-evidence observations from polluting the context window with unreliable personalization.
+
+**Category-driven rendering.** The `format_user_traits` function groups by category before rendering. This gives the LLM a structured view of what is known about the user, organized by type of knowledge (preferences vs. expertise vs. communication style).
+
+</Why>

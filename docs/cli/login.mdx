@@ -1,14 +1,69 @@
 ---
 title: "genesis login"
-description: "OAuth sign in"
+description: "Sign in to an LLM provider via OAuth device code flow"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-auth/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="login" usage="genesis login" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis login`?
+
+The `login` command authenticates with an LLM provider using the OAuth device code flow. This is the authentication method used by providers like OpenAI Codex (via ChatGPT) that support OAuth rather than plain API keys.
+
+When you run `genesis login`, Genesis initiates the device code flow: it requests a short code from the provider, displays a URL and the code, and waits for you to open the URL in a browser and authorize the connection. Once you approve, Genesis receives tokens and stores them securely for future use. Subsequent `genesis chat` or `genesis run` invocations use the stored tokens automatically.
 
 </What>
+
+<How>
+
+## Usage
+
+```bash
+genesis login
+```
+
+No flags are required. The command detects which OAuth provider is configured and initiates the appropriate flow.
+
+## Flow
+
+1. Run `genesis login`.
+2. Genesis prints a URL and a short device code.
+3. Open the URL in a browser and enter the code (or approve automatically if the browser is already authenticated).
+4. Return to the terminal — Genesis polls for authorization and stores the tokens when approved.
+
+## Example
+
+```bash
+$ genesis login
+Opening device authorization for OpenAI Codex...
+  Visit: https://auth.openai.com/device
+  Code:  ABCD-1234
+
+Waiting for authorization...
+Authorized. Tokens saved to ~/.genesis/auth.json
+```
+
+</How>
+
+<Why>
+
+## OAuth Device Code vs. API Keys
+
+Most Genesis users authenticate with a static API key set in an environment variable (configured via `genesis init --api-key-env`). OAuth is the alternative for providers that issue user-scoped access tokens rather than service API keys.
+
+The device code flow is chosen over the standard redirect flow because it works in terminal environments that cannot open a browser window or receive OAuth redirect callbacks (headless servers, SSH sessions, Docker containers). The user authorizes in a browser on any device; the terminal polls a token endpoint until approval.
+
+Tokens are stored in `~/.genesis/auth.json` and automatically refreshed before expiry. `genesis logout` clears this file. The `genesis-auth` crate handles the full OAuth lifecycle including Codex migration (converting legacy Codex credentials to the current format).
+
+</Why>
+
+</CliCommand>

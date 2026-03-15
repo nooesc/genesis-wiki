@@ -4,13 +4,155 @@ description: "File I/O operations"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/fs.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="read_file" module="builtins/fs.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does read_file Do?
+
+`read_file` reads the entire contents of a file and returns it as text. If the file exceeds 128 KiB, it returns the first 128 KiB followed by `"\n... (file truncated)"` so the LLM is aware the content was cut. This is useful for reading source files, configuration files, logs, or any UTF-8 text content on disk.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | `string` | Yes | Absolute or relative path to the file to read |
+
+## Example
+
+```json
+{
+  "name": "read_file",
+  "arguments": {
+    "path": "/home/user/my-project/src/main.rs"
+  }
+}
+```
+
+**Response:**
+```
+fn main() {
+    println!("Hello, world!");
+}
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The tool uses `fs::read_to_string`, which requires valid UTF-8. Binary files will cause an error. The 128 KiB limit (double the 64 KiB tool output cap used elsewhere) reflects that file reads are typically for analysis — the agent needs context, not just a preview. The truncation walks backward from the byte limit to find a valid UTF-8 character boundary before cutting.
+
+Response metadata includes the `path` that was read, which helps when the call is logged or replayed.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="write_file" module="builtins/fs.rs" crate="genesis-tools">
+
+<What>
+
+## What Does write_file Do?
+
+`write_file` writes text content to a file, creating it if it does not exist or overwriting it if it does. It automatically creates any missing parent directories, so you can write to `/home/user/project/src/new/module.rs` without first creating the `new/` directory. The response reports the number of bytes written.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | `string` | Yes | Path where the file should be written |
+| `content` | `string` | Yes | Text content to write |
+
+## Example
+
+```json
+{
+  "name": "write_file",
+  "arguments": {
+    "path": "/home/user/project/config.toml",
+    "content": "[server]\nport = 8080\n"
+  }
+}
+```
+
+**Response:**
+```
+wrote 22 bytes to /home/user/project/config.toml
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+`write_file` performs a full overwrite — there is no append mode. For targeted in-place edits, use the `patch` tool instead. The `fs::create_dir_all` call on the parent path is a no-op if the directory already exists, so it is always safe to include. Metadata includes `bytes_written` for verification.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="list_dir" module="builtins/fs.rs" crate="genesis-tools">
+
+<What>
+
+## What Does list_dir Do?
+
+`list_dir` lists the immediate contents of a directory, one entry per line. Directories are suffixed with `/` to distinguish them from files. Entries are sorted alphabetically. For recursive directory exploration, use `list_tree` instead.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | `string` | Yes | Path to the directory to list |
+
+## Example
+
+```json
+{
+  "name": "list_dir",
+  "arguments": {
+    "path": "/home/user/project"
+  }
+}
+```
+
+**Response:**
+```
+Cargo.toml
+README.md
+src/
+tests/
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+`list_dir` uses `fs::read_dir` for a single-level listing. Empty directories return `"(empty directory)"`. The `entry_count` in metadata reflects the number of entries after sorting. Hidden files (starting with `.`) are included — unlike `glob_search` and `list_tree`, which skip them by default.
+
+</Why>
+
+</ToolRef>

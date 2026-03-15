@@ -1,16 +1,126 @@
 ---
 title: "Agent Hooks"
-description: "Pre/Post hook system"
+description: "Shell command hooks that fire at lifecycle events in the agent loop"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/hooks.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What are Agent Hooks?
+
+Agent hooks are shell commands that Genesis executes at specific points in the agent lifecycle. They allow you to observe, log, or react to agent events without modifying Genesis itself.
+
+Six hook events are available:
+
+| Event | Fires when |
+|-------|-----------|
+| `pre_turn` | Before each agent turn begins (LLM call about to be made) |
+| `post_turn` | After each agent turn completes |
+| `pre_tool_call` | Before each individual tool call |
+| `post_tool_call` | After each individual tool call returns |
+| `on_error` | When the agent encounters an error |
+| `on_complete` | When the agent finishes the full interaction |
+
+Each hook command receives a JSON context object via the `GENESIS_HOOK_CONTEXT` environment variable. Hooks run synchronously on a separate thread with a configurable timeout. If a hook times out, the process is killed and execution continues — hooks cannot block the agent.
 
 </What>
+
+<How>
+
+## Configuration
+
+Hooks are configured in `~/.genesis/config.yaml`:
+
+```yaml
+hooks:
+  - event: pre_tool_call
+    command: "echo $GENESIS_HOOK_CONTEXT >> /tmp/tool-calls.log"
+    timeout_ms: 1000
+    enabled: true
+
+  - event: on_complete
+    command: "notify-send 'Genesis' 'Turn complete'"
+    timeout_ms: 2000
+    enabled: true
+
+  - event: on_error
+    command: "curl -X POST https://alerting.example.com/hook -d $GENESIS_HOOK_CONTEXT"
+    timeout_ms: 5000
+    enabled: false
+```
+
+## Hook Context
+
+The `GENESIS_HOOK_CONTEXT` environment variable contains a JSON object with context about the event. The exact fields depend on the event type:
+
+**`pre_tool_call` / `post_tool_call`:**
+```json
+{ "tool": "shell_exec", "session_id": "s-abc123" }
+```
+
+**`on_complete`:**
+```json
+{ "session_id": "s-abc123", "ok": true, "turns_used": 3, "tool_calls_made": 5 }
+```
+
+**`on_error`:**
+```json
+{ "error": "Tool timeout after 120s", "session_id": "s-abc123" }
+```
+
+## Hook Result
+
+Each hook execution returns a `HookResult`:
+
+```rust
+pub struct HookResult {
+    pub event: HookEvent,
+    pub command: String,
+    pub exit_code: i32,   // -1 if timed out or failed to spawn
+    pub stdout: String,
+    pub stderr: String,
+    pub duration_ms: u64,
+}
+```
+
+Non-zero exit codes are recorded but do not interrupt the agent. Hook results are logged but not surfaced to users.
+
+## Programmatic Use
+
+```rust
+let runner = HookRunner::new(vec![
+    HookConfig {
+        event: HookEvent::OnComplete,
+        command: "my-notification-script.sh".to_owned(),
+        timeout_ms: 3000,
+        enabled: true,
+    }
+]);
+
+// Called by the agent loop
+let results = runner.run_hooks(
+    HookEvent::OnComplete,
+    &serde_json::json!({"session_id": "s-123", "ok": true})
+);
+```
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Shell commands over plugin API.** Hooks execute arbitrary shell commands rather than Rust plugin functions. This makes hooks usable from any language without a Rust FFI boundary. A shell script, Python script, or compiled binary all work identically.
+
+**`GENESIS_HOOK_CONTEXT` as environment variable.** Passing context via an environment variable rather than stdin or command-line arguments avoids quoting issues with arbitrary JSON content and is the simplest approach for shell scripts to consume (`echo $GENESIS_HOOK_CONTEXT | jq .`).
+
+**Non-blocking, non-fatal.** Hooks are intentionally unable to block or fail the agent. A hook that times out is killed; a hook that returns non-zero is logged. This prevents hook misconfigurations from making the agent unusable.
+
+**Timeout enforcement via polling.** Hooks use `child.try_wait()` in a loop rather than `child.wait_with_timeout()` (which doesn't exist in stable Rust's `std::process`). The polling interval is 5ms, which provides a reasonable balance between responsiveness and CPU usage.
+
+</Why>

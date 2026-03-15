@@ -1,6 +1,6 @@
 ---
 title: "Storage Overview"
-description: "SQLite architecture and schema"
+description: "SQLite architecture, single-file database, schema versioning, and bootstrap"
 crate: genesis-storage
 source_files:
   - crates/genesis-storage/src/lib.rs
@@ -11,6 +11,89 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+Genesis stores all persistent state in a single SQLite database file at `~/.genesis/genesis.db`. The `genesis-storage` crate owns every table definition, migration, and store struct. There are no external databases, no network dependencies for storage, and no ORM — just `rusqlite` with handwritten SQL.
+
+**Schema version:** 9 (as of the current codebase).
+
+**Store types available:**
+
+| Store | Table(s) | Purpose |
+|---|---|---|
+| `SessionStore` | `sessions`, `messages`, `session_search` | Conversation history and FTS5 search |
+| `MemoryStore` | `memories`, `memory_search` | Agent-persisted notes |
+| `ScheduleStore` | `schedules` | Cron job definitions |
+| `SkillStore` | `skills`, `skill_files` | Reusable agent procedures |
+| `SkillUsageStore` | `skill_usages` | Per-skill usage and outcome tracking |
+| `SubagentStore` | `subagents` | Child agent loop metadata |
+| `UserModelStore` | `user_model` | User trait observations with confidence |
+| `PairingStore` | `pairing_approved`, `pairing_pending` | DM authorization codes |
+| `EmbeddingStore` | `memory_embeddings` | Vector blobs for semantic search |
+
+Additional tables managed directly: `metadata`, `channels`, `response_cache`, `audit_log`, `sticker_cache`, `sandboxes`, `legacy_import_runs`.
 
 </What>
+
+<How>
+
+### Bootstrap
+
+Every process that needs storage calls `bootstrap(database_path)` once at startup:
+
+```rust
+let result = bootstrap(&PathBuf::from("~/.genesis/genesis.db"))?;
+// result.schema_version == 9
+```
+
+`bootstrap` does the following in order:
+
+1. Creates the parent directory with `fs::create_dir_all`.
+2. Opens (or creates) the SQLite file.
+3. Runs a single `execute_batch` with all `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` statements for every table in the schema.
+4. Runs migrations `v2` through `v9` in order. Each migration is idempotent — it probes for a column or table first and skips if already present.
+5. Upserts `schema_version = 9` in the `metadata` table.
+
+### Connection settings
+
+Every store opens a fresh connection per operation via the internal `open()` function. The function sets four PRAGMAs on each connection:
+
+```sql
+PRAGMA journal_mode = WAL;      -- concurrent readers + single writer
+PRAGMA synchronous = NORMAL;    -- crash-safe in WAL mode
+PRAGMA busy_timeout = 5000;     -- wait up to 5 s before SQLITE_BUSY
+PRAGMA temp_store = MEMORY;     -- temp tables in RAM
+```
+
+WAL mode is critical for Genesis because the CLI and gateway can run simultaneously against the same file.
+
+### Schema migrations
+
+| Version | Change |
+|---|---|
+| v2 | Added `total_input_tokens`, `total_output_tokens` to `sessions` |
+| v3 | Added `parent_session_id` to `sessions` (conversation forking) |
+| v4 | Added `tags` to `sessions` |
+| v5 | Added `mirror`, `mirror_source` to `messages` (cross-platform delivery records) |
+| v6 | Created `response_cache`, `audit_log` tables |
+| v7 | Created `channels` table |
+| v8 | Created `sticker_cache` table |
+| v9 | Added `provider_metadata` to `messages`; created `sandboxes` table |
+
+### Health check
+
+```rust
+let health = inspect(&database_path)?;
+// health.database_exists: bool
+// health.schema_version: Option<i64>
+```
+
+</How>
+
+<Why>
+
+**Single file.** A single SQLite file keeps deployment dead simple — no running database service, no connection strings, no migrations tool. SQLite's WAL mode handles the concurrency between the CLI, gateway, and background scheduler without coordination overhead.
+
+**Idempotent bootstrap.** Using `CREATE TABLE IF NOT EXISTS` and column-existence probes means `bootstrap` is safe to call on every process start, whether the database is brand-new or already at a prior schema version. This eliminates the need for a separate migration runner or version-gate logic.
+
+**Per-operation connections.** Opening a connection per store method rather than sharing a long-lived connection avoids WAL reader accumulation and removes the need for connection-pool synchronization across async tasks. The `busy_timeout` pragma handles the rare lock contention window gracefully.
+
+</Why>

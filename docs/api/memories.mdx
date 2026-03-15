@@ -1,14 +1,162 @@
 ---
 title: "Memories API"
-description: "Memory endpoints"
+description: "List, search, and delete persistent agent memories"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ApiEndpoint } from '@site/src/components/ApiEndpoint';
+
+<ApiEndpoint method="GET" path="/memories" auth={true}>
 
 <What>
 
-*Content coming soon.*
+List recent memories stored by Eve. Memories are facts, preferences, and observations that the agent records during conversations to personalise future interactions.
 
 </What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | `integer` | `50` | Maximum number of memories to return |
+
+## Response
+
+```json
+{
+  "memories": [
+    {
+      "id": "mem-abc123",
+      "session_id": "api-1741234567890-1",
+      "kind": "fact",
+      "content": "User prefers TypeScript over JavaScript",
+      "created_at": "2026-03-15 10:30:00"
+    },
+    {
+      "id": "mem-def456",
+      "session_id": "api-1741000000000-3",
+      "kind": "preference",
+      "content": "User works in Pacific time (UTC-7)",
+      "created_at": "2026-03-14 09:00:00"
+    }
+  ],
+  "count": 2
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `id` | Unique memory identifier |
+| `session_id` | The session during which this memory was recorded |
+| `kind` | Memory category: `fact`, `preference`, `skill`, `note`, etc. |
+| `content` | The raw memory text |
+
+</How>
+
+<Why>
+
+Browse Eve's memory store to audit what she remembers about users and projects. This is the mechanism behind personalised responses — reviewing it helps you understand why Eve behaves the way she does in a given context.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/memories/search" auth={true}>
+
+<What>
+
+Search memories using keyword, vector, or hybrid (combined) retrieval. Keyword mode uses SQLite FTS5. Vector and hybrid modes require an embedding provider to be configured.
+
+</What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `q` | `string` | Required | Search query |
+| `limit` | `integer` | `10` | Maximum number of results |
+| `mode` | `string` | `"keyword"` | Search mode: `"keyword"`, `"vector"`, or `"hybrid"` |
+
+## Response
+
+```json
+{
+  "memories": [
+    {
+      "id": "mem-abc123",
+      "session_id": "api-1741234567890-1",
+      "kind": "preference",
+      "content": "User prefers TypeScript over JavaScript",
+      "created_at": "2026-03-15 10:30:00",
+      "score": 0.92,
+      "source": "vector"
+    }
+  ],
+  "count": 1,
+  "mode": "hybrid"
+}
+```
+
+The `score` field is a relevance score between 0 and 1 (higher is more relevant). The `source` field indicates which retrieval method found this result (`keyword`, `vector`, or `hybrid`).
+
+### Configuring vector search
+
+Add an `[embedding]` section to `~/.genesis/config.yaml`:
+
+```yaml
+embedding:
+  provider: openai
+  model: text-embedding-3-small
+  api_key_env: OPENAI_API_KEY
+```
+
+</How>
+
+<Why>
+
+Hybrid search gives significantly better recall than keyword-only search for semantic queries. For example, searching for `"timezone"` in keyword mode may miss a memory that says `"works in PST"`, whereas vector mode finds it by semantic similarity. Use `POST /memories/embed` to populate the vector index from existing memories.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="DELETE" path="/memories/{id}" auth={true}>
+
+<What>
+
+Delete a single memory by its ID. Also removes any associated vector embedding. Returns `404` if the memory does not exist.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "deleted": true,
+  "id": "mem-abc123"
+}
+```
+
+</How>
+
+<Why>
+
+Remove incorrect or outdated memories that would cause Eve to give wrong answers. Deleting a memory is permanent — there is no undo, so use the search endpoint to verify you have the right ID first.
+
+</Why>
+
+</ApiEndpoint>

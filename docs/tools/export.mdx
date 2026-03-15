@@ -1,16 +1,90 @@
 ---
 title: "Export"
-description: "Session export"
+description: "Export conversation sessions to Markdown, JSON, ChatML, or JSONL fine-tuning format"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/export.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="session_export" module="builtins/export.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Exports a conversation session to a file or returns the content inline. Four formats are supported:
+
+- **markdown** — Human-readable with timestamped headings per message; tool calls rendered as fenced JSON blocks.
+- **json** — Structured export with session metadata (`session_id`, `title`, `message_count`) and a `messages` array with role, timestamp, content, and parsed tool calls.
+- **chatml** — OpenAI ChatML token format (`<|im_start|>role\ncontent<|im_end|>`) for model training.
+- **jsonl** — OpenAI fine-tuning JSONL: one JSON object per file with a `messages` array of role/content pairs. Tool call turns and tool result turns are filtered out; only text-bearing `user`, `assistant`, and `system` turns are included.
+
+If no `session_id` is provided, the current session is exported.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `session_id` | `string` | No | Current session | Session ID to export |
+| `format` | `string` | No | `"markdown"` | Output format: `markdown`, `json`, `chatml`, or `jsonl` |
+| `path` | `string` | No | — | File path to write the export; if omitted, content is returned inline |
+
+## Example: Export current session as Markdown
+
+```json
+{
+  "name": "session_export",
+  "arguments": {
+    "format": "markdown",
+    "path": "/tmp/conversation.md"
+  }
+}
+```
+
+**Response:**
+```
+Session 'sess-abc123' exported to /tmp/conversation.md (23 messages)
+```
+
+## Example: Inline JSON export
+
+```json
+{
+  "name": "session_export",
+  "arguments": {
+    "session_id": "sess-abc123",
+    "format": "json"
+  }
+}
+```
+
+**Response (truncated):**
+```json
+{
+  "session_id": "sess-abc123",
+  "title": "Rust debugging session",
+  "message_count": 23,
+  "messages": [
+    { "role": "user", "timestamp": "2026-03-10 14:20:00", "content": "Help me..." },
+    ...
+  ]
+}
+```
+
+</How>
+
+<Why>
+
+**Why filter tool turns in JSONL format?** The JSONL/fine-tuning output is designed for supervised fine-tuning datasets where the training signal is the quality of text responses. Tool call mechanics are model-implementation details that vary across providers and training setups. Including them would produce noisy, non-generalizable training examples. If you need tool calls in training data, use the `trajectory` tool's `export` action with `sharegpt` or `chatml` format, which preserves tool call steps explicitly.
+
+**Why parent directory creation?** When a `path` is provided, `fs::create_dir_all` is called on the parent directory before writing. This prevents common errors when exporting to a subdirectory that does not yet exist, without requiring the user to pre-create the path.
+
+</Why>
+
+</ToolRef>

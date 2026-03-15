@@ -4,13 +4,68 @@ description: "Directory tree visualization"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/tree.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="list_tree" module="builtins/tree.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does list_tree Do?
+
+`list_tree` renders a directory as a Unicode tree diagram — similar to the Unix `tree` command. Directories are listed before files, entries are sorted alphabetically within each group, and Unicode box-drawing characters (`├──`, `└──`, `│`) connect the hierarchy visually.
+
+Hidden files and noise directories (`node_modules`, `target`, `.git`, etc.) are excluded by default. Use `show_hidden=true` to include dotfiles. Use `pattern` (e.g., `*.rs`) to show only files matching a suffix, with empty intermediate directories pruned automatically. Output is capped at 2,000 entries to prevent overwhelming the context window.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `path` | `string` | Yes | -- | Path to the root directory to visualize |
+| `max_depth` | `string` | No | `"3"` | Maximum recursion depth (1 = immediate children only) |
+| `show_hidden` | `string` | No | `"false"` | Set `"true"` to include dotfiles and hidden directories |
+| `pattern` | `string` | No | -- | Suffix filter, e.g. `*.rs` or `.toml` |
+
+## Example
+
+```json
+{
+  "name": "list_tree",
+  "arguments": {
+    "path": "/home/user/my-project",
+    "max_depth": "2"
+  }
+}
+```
+
+**Response:**
+```
+/home/user/my-project
+├── src/
+│   ├── lib.rs
+│   └── main.rs
+└── Cargo.toml
+
+1 directories, 3 files
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The recursive `walk_dir` function sorts entries into two vectors — `dirs` first, then `files` — before rendering. When a `pattern` filter is active, the tool takes a deferred-insertion approach: it recurses into each directory eagerly and only emits the directory line if the subtree produced at least one matching file. This avoids a double traversal (pre-scan then render) at the cost of inserting directory lines via `Vec::insert` after the fact.
+
+The 2,000-entry cap is enforced inside the recursion via a `truncated` flag, so the summary line always reflects actual counts even when truncation occurs.
+
+</Why>
+
+</ToolRef>

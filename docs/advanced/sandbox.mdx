@@ -1,14 +1,99 @@
 ---
 title: "Sandbox Backends"
-description: "Singularity, Daytona, Modal"
+description: "Isolated execution environments via Singularity, Daytona, and Modal"
 crate: genesis-core
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-core/src/sandbox/mod.rs
+  - crates/genesis-core/src/sandbox/manager.rs
+  - crates/genesis-core/src/sandbox/singularity.rs
+  - crates/genesis-core/src/sandbox/daytona.rs
+  - crates/genesis-core/src/sandbox/modal.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What are Sandbox Backends?
+
+Sandbox backends provide isolated execution environments for the agent's shell tool. Instead of running commands directly on the host system, the agent can execute them inside a container or cloud workspace, providing security isolation and reproducibility.
+
+Genesis supports three sandbox backends:
+
+| Backend | Technology | Use case |
+|---------|-----------|---------|
+| **Singularity** | Singularity/Apptainer container runtime | HPC environments, reproducible research |
+| **Daytona** | Daytona cloud workspaces | Remote development environments |
+| **Modal** | Modal serverless containers | Cloud-native, GPU-enabled execution |
+
+The `SandboxManager` sits in front of all backends and provides caching and persistence. When the agent requests execution for a `task_id`, the manager first checks an in-memory cache for a live instance, then checks the SQLite `SandboxStore` for a saved snapshot. If neither exists, it creates a new sandbox. Snapshots allow sandbox state to persist across Genesis restarts.
+
+The `SandboxBackend` trait defines the interface all backends implement: `create`, `execute`, `snapshot`, and `cleanup`.
 
 </What>
+
+<How>
+
+## Configuration
+
+```yaml
+terminal:
+  backend: singularity   # singularity | daytona | modal
+  image: "docker://python:3.11-slim"
+  cpu: 1.0
+  memory_mb: 2048
+  disk_mb: 10240
+  persistent: false
+  lifetime_seconds: 3600
+```
+
+## Singularity Backend
+
+Singularity (also supported as Apptainer) runs containers using local SIF images. The backend auto-detects whether `apptainer` or `singularity` is on the PATH.
+
+**Key behavior:**
+- Container images (`docker://...`) are pulled and cached as `.sif` files in a scratch directory (controlled by `TERMINAL_SCRATCH_DIR` or `~/.genesis/sif-cache`).
+- Commands run with `singularity exec --writable-tmpfs`.
+- Optional bind mounts via `BackendSpecific::Singularity { bind }`.
+
+## Daytona Backend
+
+Daytona creates remote cloud workspaces via the Daytona API. The backend requires:
+- `DAYTONA_API_KEY` or `DAYTONA_TOKEN` environment variable
+- `DAYTONA_API_URL` (configurable in `BackendSpecific::Daytona { api_url }`)
+
+## Modal Backend
+
+Modal runs serverless GPU-enabled containers on Modal's infrastructure. The backend uses the `modal` CLI and Modal's Python SDK. GPU type is configurable via `BackendSpecific::Modal { gpu, app }`.
+
+## SandboxManager Cache and Persistence
+
+```
+execute(backend, config, command)
+  1. Check in-memory cache by task_id
+  2. If miss: check SandboxStore (SQLite) for saved snapshot
+  3. If found: restore sandbox from snapshot via backend.create()
+  4. If not found: create fresh sandbox
+  5. Execute command
+  6. Update cache and store
+  7. Evict instances idle > lifetime_seconds
+```
+
+Calling `cleanup(instance, persistent=true)` stops the sandbox but preserves the snapshot in the store for future resumption. `persistent=false` fully deletes the instance.
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**`SandboxBackend` trait for pluggability.** Different deployments have different isolation needs. HPC clusters often have Singularity available but not Docker. Cloud-first users prefer Modal or Daytona. The trait abstraction allows all three to share the same manager logic and shell tool integration.
+
+**In-memory cache + SQLite persistence.** Sandbox creation is expensive (container pull, workspace provisioning). The two-level cache (memory for in-process reuse, SQLite for cross-restart persistence) ensures sandboxes are not recreated on every tool call or after a server restart.
+
+**Snapshot-based resumption.** Some backends (Daytona in particular) support taking a snapshot of the sandbox state. This allows resuming a development environment with installed packages and modified files intact, rather than starting from a clean image.
+
+**`dangerous_command_blocks` bypass in sandbox mode.** When running inside a sandbox, the shell tool's dangerous command checks (`rm -rf /`, fork bombs, etc.) are bypassed. The container boundary provides the security isolation, and being overly restrictive inside a container would prevent legitimate operations like `rm -rf /tmp/build`.
+
+</Why>

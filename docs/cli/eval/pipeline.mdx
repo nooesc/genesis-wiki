@@ -1,13 +1,76 @@
 ---
 title: "eval pipeline"
-description: "Multi-step data pipeline"
-last_synced_commit: "0000000"
+description: "Run a multi-step data pipeline: validate → auto-tag → filter → export"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval pipeline" usage="genesis eval pipeline <DIR> --output <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval pipeline`?
+
+The `pipeline` command runs a configurable multi-step data preparation pipeline over a trajectory directory. The pipeline stages — validate, auto-tag, filter, sample, and export — are composed in a fixed order, with each stage enabled or configured via flags. This replaces a series of manual `eval` subcommand invocations with a single command, making it easy to reproduce dataset preparation steps consistently. The processed output is written to the specified output directory, optionally with a `dataset.json` manifest.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Source directory containing trajectory JSON files |
+| `--output <DIR>` | `string` | Yes | Output directory for processed trajectories |
+| `--recursive` | `bool` | No | Recursively scan nested directories |
+| `--validate` | `bool` | No | Remove invalid trajectories during the validation stage |
+| `--auto-tag` | `bool` | No | Apply auto-tagging before filtering |
+| `--min-quality <SCORE>` | `f64` | No | Minimum quality score filter (0.0–1.0) |
+| `--success-only` | `bool` | No | Only include successful trajectories |
+| `--tag <TAG>` | `string` | No | Only include trajectories with this tag |
+| `--model <MODEL>` | `string` | No | Only include trajectories for this model |
+| `--format <FORMAT>` | `string` | No | Export format: `json` (default), `chatml`, or `sharegpt` |
+| `--manifest` | `bool` | No | Build `dataset.json` manifest in the output directory |
+| `--limit <N>` | `usize` | No | Maximum number of trajectories to include |
+| `--seed <SEED>` | `u64` | No | Random seed for sampling when `--limit` is set |
+
+## Examples
+
+```bash
+# Full pipeline: validate, tag, filter to quality 0.7+, export as ChatML
+genesis eval pipeline ./raw --output ./ready \
+  --validate --auto-tag --min-quality 0.7 --success-only --format chatml --manifest
+
+# Simple filter pipeline: no tagging, just quality and outcome filter
+genesis eval pipeline ./raw --output ./clean --min-quality 0.6 --success-only
+
+# Sample 500 trajectories from a large dataset and export as ShareGPT
+genesis eval pipeline ./raw --output ./sample500 --limit 500 --seed 42 --format sharegpt
+```
+
+</How>
+
+<Why>
+
+## Pipeline Stage Order
+
+Stages always execute in this fixed order, regardless of which flags are set:
+
+1. **Validate** (if `--validate`): remove structurally invalid files
+2. **Auto-tag** (if `--auto-tag`): add semantic tags in place
+3. **Filter**: apply model, tag, quality, outcome, and step filters
+4. **Sample** (if `--limit`): randomly sample down to `--limit` trajectories
+5. **Export**: copy to output directory in the specified format
+6. **Manifest** (if `--manifest`): write `dataset.json` to output directory
+
+This ordering ensures that tagging happens before tag-based filtering, and sampling happens after filtering so the sample is drawn from the already-filtered set.
+
+</Why>
+
+</CliCommand>

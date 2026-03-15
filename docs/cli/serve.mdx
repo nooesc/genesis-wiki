@@ -1,14 +1,108 @@
 ---
 title: "genesis serve"
-description: "HTTP API server"
+description: "Start the HTTP API server"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-gateway/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="serve" usage="genesis serve [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis serve`?
+
+The `serve` command starts the Genesis HTTP API server, exposing Eve as a REST API over the network. Once running, other applications — Telegram bots, Discord integrations, home automation systems, custom front-ends, or other services — can send messages to Eve and receive responses over HTTP.
+
+The server handles both synchronous chat requests (`POST /chat`) and streaming responses (`POST /chat/stream`). It also exposes endpoints for managing sessions, memories, skills, schedules, subagents, and user model traits. Platform webhooks for Telegram, Discord, Slack, WhatsApp, and Home Assistant are activated automatically when the relevant configuration is present.
+
+The scheduler runtime runs as a background task within the server process, polling for due cron jobs every minute and executing them.
 
 </What>
+
+<How>
+
+## Options
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--host <HOST>` | `string` | Address to bind (default: `0.0.0.0`) |
+| `--port <PORT>` | `u16` | Port to listen on (default: `3000`) |
+
+## Examples
+
+**Start with defaults (bind all interfaces, port 3000):**
+```bash
+genesis serve
+```
+
+**Bind to localhost only:**
+```bash
+genesis serve --host 127.0.0.1 --port 3000
+```
+
+**Use a non-default port:**
+```bash
+genesis serve --port 8080
+```
+
+**Run as a systemd service:**
+```ini
+[Service]
+ExecStart=/usr/local/bin/genesis serve --host 127.0.0.1 --port 3000
+Restart=on-failure
+```
+
+**Quick health check after starting:**
+```bash
+curl http://localhost:3000/health
+```
+
+**Send a chat request:**
+```bash
+curl -X POST http://localhost:3000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello Eve"}'
+```
+
+## Key API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Status, version, uptime, model, MCP servers |
+| `POST` | `/chat` | Blocking chat (returns full response) |
+| `POST` | `/chat/stream` | SSE streaming chat |
+| `GET` | `/sessions` | List recent sessions |
+| `GET` | `/skills` | List all skills |
+| `GET` | `/memories` | List recent memories |
+| `GET` | `/schedules` | List schedules |
+| `GET` | `/tools` | List available tools |
+
+</How>
+
+<Why>
+
+## Axum-Based Server
+
+The gateway is built on [Axum](https://github.com/tokio-rs/axum) with a shared `reqwest::Client` across all platform webhook handlers. IP-based rate limiting is applied globally and is configurable via `gateway.rate_limit_rpm` in the config file.
+
+## Scheduler Integration
+
+Rather than running a separate scheduler process, the scheduler daemon is embedded within the server process. It polls the `schedules` SQLite table every minute, identifies cron expressions that are due, and executes them as agent sessions. Results are delivered to the configured destination (a webhook URL or platform channel).
+
+## Platform Webhooks
+
+Platform webhook handlers (Telegram, Discord, Slack, WhatsApp, Home Assistant) are mounted automatically when their respective configuration sections are populated. Webhook signatures are verified using HMAC-SHA256 or Ed25519 depending on the platform, preventing unauthorized requests.
+
+## CORS and Security
+
+CORS headers are configured to allow cross-origin requests. For production deployments, it is recommended to place Genesis behind a reverse proxy (nginx, Caddy) that handles TLS termination and restricts the allowed origins to known clients.
+
+</Why>
+
+</CliCommand>

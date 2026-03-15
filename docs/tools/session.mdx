@@ -1,16 +1,106 @@
 ---
 title: "Session"
-description: "Session management"
+description: "Search past sessions and replay conversation history"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/session.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="session_search" module="builtins/session.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Searches past conversation sessions using full-text search against the SQLite FTS5 index. Given a keyword or phrase, it returns a list of matching sessions — including their IDs, platform origins, titles, and last-updated timestamps. This lets Eve recall what was discussed in previous conversations without needing to keep every session in context.
+
+Useful when a user asks "did we discuss X before?" or when Eve needs to cross-reference prior work. The search targets both session titles and message content stored in the database.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | `string` | Yes | The search term or phrase to match against past sessions |
+
+## Example
+
+```json
+{
+  "name": "session_search",
+  "arguments": {
+    "query": "debug Rust async runtime"
+  }
+}
+```
+
+**Response:**
+```
+Found 2 sessions matching "debug Rust async runtime":
+- s-abc123 [cli] Rust async debugging (2026-03-10 14:22:00)
+- s-def456 [telegram] tokio runtime issues (2026-03-08 09:45:00)
+```
+
+</How>
+
+<Why>
+
+The tool calls `SessionStore::search_sessions`, which uses SQLite FTS5 full-text search. FTS5 supports prefix matching, phrase queries, and boolean operators so the underlying index can handle complex queries — but the tool passes the query string through directly, so the model can use simple keywords. Sessions with no matches return a plain "No past sessions found" message rather than an error, because an empty result is a valid outcome, not a failure.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="session_history" module="builtins/session.rs" crate="genesis-tools">
+
+<What>
+
+Loads the message history of a specific session by ID. Returns the most recent messages in chronological order, showing role, timestamp, and content for each turn. This is how Eve can re-read a prior conversation in full detail, rather than just knowing it exists.
+
+Each message is truncated at 300 characters in the output to keep the context manageable while still conveying the shape of the conversation.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `session_id` | `string` | Yes | — | The session ID to load history for |
+| `limit` | `string` | No | `"20"` | Maximum number of most-recent messages to return |
+
+## Example
+
+```json
+{
+  "name": "session_history",
+  "arguments": {
+    "session_id": "s-abc123",
+    "limit": "10"
+  }
+}
+```
+
+**Response:**
+```
+Session s-abc123 (47 messages, showing last 10):
+[2026-03-10 14:20:00] user: How do I profile async Rust code?
+[2026-03-10 14:20:05] assistant: You can use tokio-console for async task...
+...
+```
+
+</How>
+
+<Why>
+
+All messages for the session are loaded first, then the tail `[total - limit ..]` slice is taken. This means the database query always fetches the full history, but only the most recent messages are returned. For very long sessions this trades some memory for simplicity; context retrieval in practice stays well below the SQLite read limit. The 300-character per-message truncation in the output is intentional — it keeps the tool output concise while still giving the model enough to understand what was discussed.
+
+</Why>
+
+</ToolRef>

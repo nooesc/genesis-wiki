@@ -1,14 +1,129 @@
 ---
 title: "genesis sessions"
-description: "Session management"
+description: "Inspect and manage saved conversation sessions"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-storage/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="sessions" usage="genesis sessions <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis sessions`?
+
+The `sessions` command gives you a window into Genesis's conversation history. Every chat and `run` invocation creates a session — a named container for a sequence of messages — that is stored in the local SQLite database. The `sessions` subcommands let you browse, search, export, rename, and delete these sessions.
+
+Sessions are the persistence layer for Eve's conversational memory. Resuming a session (via `genesis chat --resume <ID>`) reloads the full message history into context, so Eve can continue exactly where you left off. The sessions CLI is how you manage that history: finding old conversations, cleaning up stale data, or exporting a session for sharing.
 
 </What>
+
+<How>
+
+## Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List recent sessions |
+| `show <ID>` | Show messages from a session |
+| `export <ID>` | Export a session as JSON or Markdown |
+| `search <QUERY>` | Search across all sessions using full-text search |
+| `delete <ID>` | Delete a session and its messages |
+| `stats` | Show aggregate usage statistics across all sessions |
+| `purge` | Delete sessions older than a given number of days |
+| `rename <ID> <TITLE>` | Set a human-readable title on a session |
+| `import <FILE>` | Import a conversation from a ShareGPT JSON or JSONL file |
+
+## Options by Subcommand
+
+### `sessions show <ID>`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--limit <N>` | `usize` | Max messages to display (default: 50) |
+
+### `sessions export <ID>`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--format <FMT>` | `string` | Output format: `json` or `md` (default: `json`) |
+
+### `sessions purge`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--older-than <N>` | `u32` | Delete sessions older than N days |
+
+### `sessions import <FILE>`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--format <FMT>` | `string` | `sharegpt` or `jsonl` (auto-detected from extension if omitted) |
+| `--title <TEXT>` | `string` | Optional title for the imported session |
+
+## Examples
+
+**List recent sessions:**
+```bash
+genesis sessions list
+```
+
+**Show the last 20 messages from a session:**
+```bash
+genesis sessions show session-abc123 --limit 20
+```
+
+**Export as Markdown for sharing:**
+```bash
+genesis sessions export session-abc123 --format md > conversation.md
+```
+
+**Search across all sessions:**
+```bash
+genesis sessions search "authentication bug"
+```
+
+**Rename a session:**
+```bash
+genesis sessions rename session-abc123 "Auth refactor discussion"
+```
+
+**Delete old sessions:**
+```bash
+genesis sessions purge --older-than 90
+```
+
+**Show usage stats:**
+```bash
+genesis sessions stats
+```
+
+**Import a ShareGPT conversation:**
+```bash
+genesis sessions import conversation.json --format sharegpt --title "Imported chat"
+```
+
+</How>
+
+<Why>
+
+## SQLite-Backed History
+
+All sessions and messages are stored in a single SQLite file at the path configured in `storage.database_path` (default: `~/.genesis/genesis.db`). The schema uses FTS5 full-text search on message content, enabling fast keyword search across all your conversations regardless of how many sessions you have accumulated.
+
+## Session IDs
+
+Auto-generated session IDs use the format `chat-{timestamp}-{sequence}`. You can override this with `--session-id` in `chat` or `run` to create meaningful, reproducible identifiers. Once a session is named, you can use it with `--resume` to return to any conversation by a memorable handle rather than an opaque ID.
+
+## Export Formats
+
+The `json` export includes the full session metadata and message array in a structured format compatible with `genesis sessions import`. The `md` export renders the conversation as a readable Markdown document with speaker labels — useful for documentation or sharing with collaborators who do not have Genesis installed.
+
+## Purge vs Delete
+
+`delete` removes a single session by ID. `purge` removes all sessions older than a threshold in days. Purge is the standard maintenance operation for keeping database size under control over time; delete is for targeted removal of specific sessions you no longer need.
+
+</Why>
+
+</CliCommand>

@@ -1,14 +1,78 @@
 ---
 title: "genesis init"
-description: "Interactive setup wizard"
+description: "Initialize Genesis with an interactive setup wizard"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-config/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="init" usage="genesis init [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis init`?
+
+The `init` command is the first thing you run after installing Genesis. It walks you through setting up your configuration: choosing an LLM provider backend, entering a model name, providing the API base URL, and specifying which environment variable holds your API key.
+
+Run without flags, it launches an interactive wizard that prompts for each value. Pass flags directly for non-interactive setup — useful in CI pipelines, container builds, or dotfile bootstrapping scripts. The `setup` command is a hidden alias for `init`.
 
 </What>
+
+<How>
+
+## Options
+
+| Flag | Description |
+|------|-------------|
+| `--backend <NAME>` | LLM provider backend (e.g. `openai`, `openrouter`, `anthropic`, `google`, `ollama`) |
+| `--model <NAME>` | Model name (e.g. `gpt-4.1-mini`, `claude-sonnet-4-6`, `gemini-2.5-pro`) |
+| `--base-url <URL>` | Base URL for the provider API |
+| `--api-key-env <VAR>` | Environment variable holding the API key (e.g. `OPENAI_API_KEY`) |
+
+## Examples
+
+**Interactive setup (recommended for first-time users):**
+```bash
+genesis init
+```
+
+**Non-interactive setup for OpenAI:**
+```bash
+genesis init --backend openai --model gpt-4.1-mini --api-key-env OPENAI_API_KEY
+```
+
+**Non-interactive setup for Anthropic:**
+```bash
+genesis init --backend anthropic --model claude-sonnet-4-6 --api-key-env ANTHROPIC_API_KEY
+```
+
+**Non-interactive setup for a local Ollama instance:**
+```bash
+genesis init --backend ollama --model llama3.2 --base-url http://localhost:11434/v1
+```
+
+**Non-interactive setup for OpenRouter:**
+```bash
+genesis init --backend openrouter --model anthropic/claude-sonnet-4-6 --api-key-env OPENROUTER_API_KEY
+```
+
+</How>
+
+<Why>
+
+## What Init Writes
+
+`genesis init` writes a `config.yaml` file to `~/.genesis/config.yaml` (creating the directory if it does not exist). It sets the `provider.backend`, `provider.model`, `provider.base_url`, and `provider.api_key_env` fields. All other config values remain at their defaults.
+
+After init, run `genesis doctor` to verify that the config is valid, that the storage paths exist, and optionally that the API key is working. If you need to change a single value later, use `genesis config set <key> <value>` rather than re-running init.
+
+The `setup` alias exists for discoverability — users unfamiliar with the project may reach for `setup` intuitively, and it behaves identically.
+
+</Why>
+
+</CliCommand>

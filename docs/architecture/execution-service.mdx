@@ -4,13 +4,125 @@ description: "Unified execution path"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/execution.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the Execution Service?
+
+`SessionExecutionService` is the single front door through which every interaction with Eve must pass. Whether you type a message in the CLI, call `POST /chat` via the HTTP API, receive a Telegram message, or trigger a scheduled cron job — they all ultimately call the same `run_turn` or `run_turn_streaming` method on this service.
+
+Think of it as the front desk of a hotel. Guests arrive from many different entrances — the lobby, the parking garage, the restaurant side door — but they all check in at the same desk. The desk knows how to handle the check-in process: find the room (load session history), hand over the key (configure the agent), track the stay (persist messages and token usage), and note any preferences (load skills, memories, user traits). The guests don't need to understand the hotel's internal plumbing, and the plumbing doesn't need to know whether the guest arrived through the front lobby or a side door.
+
+The service is responsible for five things: ensuring the session exists in storage, loading conversation history, building and configuring the `AgentLoop`, persisting everything the loop emits, and returning a clean result to the caller. It owns no persistent state between requests other than a lazily-initialized sandbox handle that persists across turns within a session lifetime.
 
 </What>
+
+<How>
+
+## Creating a Service Instance
+
+```rust
+// Minimal — no MCP servers
+let service = SessionExecutionService::new(&loaded_config);
+
+// With MCP servers (strict_startup = true fails if any configured server is unreachable)
+let service = SessionExecutionService::with_mcp(&loaded_config, strict_startup).await?;
+
+// With an already-connected MCP manager (e.g. from gateway startup)
+let mut service = SessionExecutionService::new(&loaded_config);
+service.set_mcp(Arc::clone(&mcp_manager));
+```
+
+## Configuration Overrides
+
+The service has several override setters for per-request customization:
+
+| Method | Purpose |
+|--------|---------|
+| `set_system_prompt_override(String)` | Replace Eve's default identity with a custom system prompt |
+| `set_response_format(ResponseFormat)` | Constrain output to JSON object or JSON schema |
+| `set_model_override(backend, model)` | Use a different model than the config file specifies |
+| `set_personality_override(String)` | Select a named personality (e.g. `"kawaii"`, `"pirate"`) |
+| `set_approval_handler(Arc<dyn ApprovalHandler>)` | Intercept tool calls for interactive confirmation |
+| `set_default_working_dir(String)` | Redirect all shell commands to a worktree directory |
+
+## Running a Turn
+
+```rust
+let input = SessionTurnInput {
+    session_id: "uuid-here",
+    session_platform: "cli",
+    delivery_platform: DeliveryPlatform::Cli,
+    prompt: "What files are in the current directory?",
+    title: None,    // auto-generated if None and session is new
+    images: vec![], // optional base64 or URL image attachments
+};
+
+// Blocking completion
+let outcome: SessionTurnOutcome = service.run_turn(input).await?;
+println!("{}", outcome.result.response);
+
+// Streaming completion — on_chunk fires for each StreamEvent
+service.run_turn_streaming(input, |event| {
+    match event {
+        StreamEvent::Chunk(text) => print!("{text}"),
+        StreamEvent::ToolCallStart { name, .. } => println!("[calling {name}]"),
+        _ => {}
+    }
+}).await?;
+```
+
+## What Happens Inside `run_turn`
+
+The internal `run_turn_with_runner` method executes this sequence:
+
+1. **`ensure_session`** — Creates the session row in SQLite if it does not exist (idempotent).
+2. **`load_history`** — Loads all stored messages and reconstructs them as `Vec<ChatMessage>`.
+3. **`build_agent_loop`** — Assembles the full agent configuration (see below).
+4. **`runner(history)`** — Calls `agent.run_turn_with_images()`, which is the actual agent loop.
+5. **`persist_new_messages`** — Saves every message the loop emitted to SQLite.
+6. **`store.add_usage`** — Records input/output token counts for the session.
+7. **`maybe_inject_skill_nudge`** — If the turn was complex (many tool calls), appends a nudge suggesting the user create a skill.
+8. Returns `SessionTurnOutcome { session_id, created_session, result }`.
+
+## Inside `build_agent_loop`
+
+This method assembles the full `AgentLoop` by composing all the configuration:
+
+- Builds the `ToolRuntime` (60+ built-in tools + optional MCP tools + optional sandbox executor)
+- Applies tool allowlist/denylist filters from config
+- Loads skills (filtered by relevance to the current prompt), user model traits, context files (`.context.md`), and memory recall results
+- Builds the system prompt via `SystemPromptBuilder`
+- Creates the `ChatClient` from resolved provider credentials
+- Attaches optional `tool_client` (a separate, cheaper model for post-tool-result turns)
+- Attaches fallback provider clients for automatic failover
+- Attaches an `ExecutionSubagentSpawner` so the loop can spawn parallel subagent workstreams
+- Optionally sets up a `ResponseCacheStore` for replay caching
+
+</How>
+
+<Why>
+
+## Why a Single Unified Path?
+
+Before `SessionExecutionService` existed, each entry point (CLI, gateway, scheduler) had its own agent initialization logic. This led to drift: the CLI handled context compression differently from the gateway, the scheduler didn't load skills, and adding a new feature (like worktree isolation) required touching three separate code paths.
+
+Unifying into a single service means any capability added once works everywhere. When the response cache was added, it only needed to be wired into `build_agent_loop`. When worktree isolation was added, `set_default_working_dir` propagated to both the CLI `--worktree` flag and any gateway request that specified a working directory.
+
+## Why is the Service Lifetime-Scoped to `LoadedConfig`?
+
+`SessionExecutionService<'a>` holds a `&'a LoadedConfig` rather than owning the config. This was a deliberate choice: the gateway creates one `LoadedConfig` at startup and shares it across all request handlers. By holding a reference, each service instance is zero-copy with respect to configuration data. The lifetime bound (`'a`) makes it impossible to outlive the config, preventing use-after-free bugs at compile time.
+
+## Why is the Sandbox a `OnceLock<Option<SandboxComponents>>`?
+
+Sandbox backends (Singularity, Modal, Daytona) have expensive initialization: they may need to provision a container, negotiate a connection, or verify credentials. Initializing on every turn would add hundreds of milliseconds of latency to each message. The `OnceLock` ensures initialization happens exactly once per service instance, on the first turn that needs the sandbox. If initialization fails, it stores `None`, and all subsequent turns skip sandbox execution gracefully rather than retrying the failing initialization on every request.
+
+## Why Does `run_turn_with_runner` Take a Closure?
+
+The streaming and non-streaming variants of `run_turn` share identical session management logic (ensure session, load history, persist messages, update usage, inject nudge). The only difference is the agent loop call in the middle. Rather than duplicating the wrapper logic, both variants pass a closure to `run_turn_with_runner` or `run_turn_streaming_with_runner` that captures the agent-specific part. The higher-order-function pattern keeps the shared logic in one place while allowing the two variants to inject their different loop invocations.
+
+</Why>

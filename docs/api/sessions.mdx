@@ -1,14 +1,295 @@
 ---
 title: "Sessions API"
-description: "Session CRUD endpoints"
+description: "Session lifecycle — list, fetch, fork, title, messages, purge"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ApiEndpoint } from '@site/src/components/ApiEndpoint';
+
+<ApiEndpoint method="GET" path="/sessions" auth={true}>
 
 <What>
 
-*Content coming soon.*
+List recent sessions, optionally filtered by a full-text search query. Returns sessions ordered by most-recently-updated first.
 
 </What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | `integer` | `50` | Maximum number of sessions to return |
+| `search` | `string` | — | Full-text search across session titles and messages |
+
+## Response
+
+```json
+{
+  "sessions": [
+    {
+      "id": "api-1741234567890-1",
+      "platform": "api",
+      "title": "Fix the login bug",
+      "total_input_tokens": 1420,
+      "total_output_tokens": 830,
+      "created_at": "2026-03-15 10:30:00",
+      "updated_at": "2026-03-15 10:35:22"
+    }
+  ],
+  "count": 1
+}
+```
+
+</How>
+
+<Why>
+
+Use this to build session browsers, dashboards, or resume workflows. The `search` parameter runs SQLite FTS5 so it scales to thousands of sessions without a full scan.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/sessions/{id}" auth={true}>
+
+<What>
+
+Fetch metadata for a single session by its ID. Returns `404` if the session does not exist.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "id": "api-1741234567890-1",
+  "platform": "api",
+  "title": "Fix the login bug",
+  "total_input_tokens": 1420,
+  "total_output_tokens": 830,
+  "created_at": "2026-03-15 10:30:00",
+  "updated_at": "2026-03-15 10:35:22"
+}
+```
+
+</How>
+
+<Why>
+
+Fetch session metadata before loading its messages, or use the token counts to estimate cost before making further requests.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="DELETE" path="/sessions/{id}" auth={true}>
+
+<What>
+
+Permanently delete a session and all its messages. Returns `404` if the session does not exist.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "deleted": true,
+  "session_id": "api-1741234567890-1"
+}
+```
+
+</How>
+
+<Why>
+
+Remove test sessions, PII-containing conversations, or sessions that have grown beyond a useful context window before starting fresh.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/sessions/{id}/messages" auth={true}>
+
+<What>
+
+Return the full ordered message history for a session: user turns, assistant turns, and tool call results.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "session_id": "api-1741234567890-1",
+  "messages": [
+    {
+      "id": 1,
+      "session_id": "api-1741234567890-1",
+      "role": "user",
+      "content": "Fix the login bug",
+      "tool_calls_json": null,
+      "created_at": "2026-03-15 10:30:00"
+    },
+    {
+      "id": 2,
+      "session_id": "api-1741234567890-1",
+      "role": "assistant",
+      "content": "I'll look at the authentication code now.",
+      "tool_calls_json": "[{\"id\":\"call_abc\",\"name\":\"read_file\",\"arguments\":{\"path\":\"src/auth.rs\"}}]",
+      "created_at": "2026-03-15 10:30:05"
+    }
+  ],
+  "count": 2
+}
+```
+
+The `tool_calls_json` field is a JSON-encoded array of tool calls made by the assistant in that turn, or `null` for plain text turns.
+
+</How>
+
+<Why>
+
+Replay conversations, build UIs that show the assistant's reasoning, or export transcripts for audit purposes. The raw message history is what the agent loop uses internally, so it is complete and authoritative.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="POST" path="/sessions/{id}/fork" auth={true}>
+
+<What>
+
+Copy an existing session (with all its messages) into a new session. Useful for branching explorations without losing the original conversation.
+
+</What>
+
+<How>
+
+## Request
+
+```json
+{
+  "new_session_id": "my-fork-123"
+}
+```
+
+The `new_session_id` field is optional. If omitted, Genesis generates one automatically: `fork-{source_id}-{timestamp}`.
+
+## Response
+
+```json
+{
+  "source_session_id": "api-1741234567890-1",
+  "new_session_id": "my-fork-123"
+}
+```
+
+</How>
+
+<Why>
+
+Fork a session before trying a risky approach so you can always return to a known-good state. Also useful for A/B testing different system prompts against the same conversation history.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="PATCH" path="/sessions/{id}/title" auth={true}>
+
+<What>
+
+Update the human-readable title for a session. The title appears in session listings and is used as the session label in dashboards.
+
+</What>
+
+<How>
+
+## Request
+
+```json
+{
+  "title": "Refactor authentication module"
+}
+```
+
+## Response
+
+```json
+{
+  "session_id": "api-1741234567890-1",
+  "title": "Refactor authentication module",
+  "updated": true
+}
+```
+
+`updated` is `true` when the session was found and updated, `false` if the session existed but the title was unchanged.
+
+</How>
+
+<Why>
+
+Auto-generated session IDs are opaque. Titles let you label conversations so you can find them again in `/sessions?search=...`.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="DELETE" path="/sessions/purge" auth={true}>
+
+<What>
+
+Bulk-delete sessions (and their messages) that have not been updated within a configurable number of days. This is the maintenance operation for keeping the database lean.
+
+</What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `older_than_days` | `integer` | `30` | Delete sessions not updated for at least this many days |
+
+## Response
+
+```json
+{
+  "purged": 47,
+  "older_than_days": 30
+}
+```
+
+</How>
+
+<Why>
+
+Schedule this endpoint via a cron job or Genesis's own scheduler to prevent the database from growing indefinitely. The default threshold of 30 days is conservative — most operators want to keep recent context but drop old inactive sessions.
+
+</Why>
+
+</ApiEndpoint>

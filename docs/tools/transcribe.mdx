@@ -1,16 +1,68 @@
 ---
 title: "Transcribe"
-description: "Audio transcription"
+description: "Transcribe audio to text using Whisper"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/transcribe.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="transcribe" module="builtins/transcribe.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does transcribe Do?
+
+`transcribe` transcribes an audio file to text using an OpenAI-compatible Whisper API endpoint. It uploads the audio file as a multipart form, requests plain text output, and returns the transcription directly. Optionally specify the language to improve accuracy for non-English audio, or provide a `prompt` to prime the model with context or domain-specific vocabulary.
+
+Supported audio formats: MP3, MP4, MPEG, MPGA, M4A, WAV, WebM, OGG, FLAC. Files must be 25 MB or smaller (the Whisper API limit).
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `file_path` | `string` | Yes | -- | Path to the audio file to transcribe |
+| `model` | `string` | No | `"whisper-1"` | Whisper model to use |
+| `language` | `string` | No | -- | ISO 639-1 language code, e.g. `"en"`, `"fr"`, `"zh"` |
+| `prompt` | `string` | No | -- | Optional context to guide transcription (vocabulary, names, style) |
+| `api_base` | `string` | No | `$OPENAI_API_BASE` or `https://api.openai.com/v1` | API base URL |
+| `api_key` | `string` | No | `$OPENAI_API_KEY` | API key (falls back to env var) |
+
+## Example
+
+```json
+{
+  "name": "transcribe",
+  "arguments": {
+    "file_path": "/home/user/meeting_recording.mp3",
+    "language": "en",
+    "prompt": "Genesis, Rust, async, tokio"
+  }
+}
+```
+
+**Response:**
+```
+Welcome to the Genesis project meeting. Today we'll be discussing the async runtime migration to Tokio...
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The tool validates the file extension against the list of supported formats before making any network call. The file is read into memory, wrapped in a `reqwest::blocking::multipart::Part` with the correct MIME type (`audio/<ext>`), and submitted to `/audio/transcriptions` with `response_format=text` to get a plain text response rather than a JSON object.
+
+The 120-second HTTP timeout reflects that Whisper transcription can be slow for long recordings. The 25 MB file size limit is checked via `fs::metadata` before reading to avoid loading large files into memory.
+
+</Why>
+
+</ToolRef>

@@ -1,13 +1,48 @@
 ---
 title: "eval report"
-description: "Build replay report for one trajectory"
-last_synced_commit: "0000000"
+description: "Build a replay report for one trajectory JSON file"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval report" usage="genesis eval report <FILE>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval report`?
+
+The `report` command reads a single trajectory JSON file and prints a human-readable replay report. It shows the trajectory's metadata (model, session ID, outcome), a step-by-step breakdown of every action Eve took, any warnings encountered during the replay check, and a summary of token usage. Use this command when you want to inspect one specific trajectory in depth — for example, to understand why a session was flagged as a failure or to audit the tool calls Eve made.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<FILE>` | `string` | Yes | Path to a trajectory JSON file |
+
+## Example
+
+```bash
+# Inspect a specific trajectory file
+genesis eval report ./trajectories/session-abc123.json
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+The report command is intentionally scoped to a single file so its output is deterministic and easy to pipe or redirect. It uses the same replay logic as `eval summarize` but skips aggregation — every step is printed verbatim, including tool names, inputs, and outputs. This makes `report` the right tool for post-mortem debugging of a trajectory rather than bulk analysis.
+
+</Why>
+
+</CliCommand>

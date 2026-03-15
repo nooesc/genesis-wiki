@@ -1,16 +1,111 @@
 ---
 title: "Guardrails"
-description: "Safety constraints"
+description: "Input and output safety constraints"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/guardrails.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What are Guardrails?
+
+Guardrails are configurable pre- and post-processing checks that run on every agent input (user prompt) and output (agent response). They can block, modify, or flag content before it reaches the agent or before it is returned to the caller.
+
+Genesis ships five built-in guardrail types:
+
+| Guardrail | Applies to | Default action |
+|-----------|-----------|----------------|
+| PII detection (phone, email, SSN, credit card, IP) | Both | Redact |
+| Content length limit | Output | Redact (truncate) |
+| Forbidden input patterns (regex) | Input | Block |
+| Forbidden output patterns (regex) | Output | Block |
+| JSON output validation | Output | Block |
+
+Custom regex rules can be added with configurable scope (`input`, `output`, or `both`) and action (`block`, `warn`, or `redact`).
+
+Each check produces a `Violation` with a `rule` name, human-readable `message`, and `ViolationAction`. The aggregate `GuardrailResult` indicates whether the content `passed` (no blocking violations) and returns the potentially modified content.
 
 </What>
+
+<How>
+
+## Configuration
+
+Guardrails are configured in `~/.genesis/config.yaml`:
+
+```yaml
+guardrails:
+  detect_pii: true
+  pii_action: redact        # block | warn | redact
+  max_response_length: 8000
+  forbidden_input_patterns:
+    - "(?i)ignore.*instructions"
+    - "(?i)jailbreak"
+  forbidden_output_patterns:
+    - "(?i)password\\s*[:=]"
+  require_json_output: false
+  custom_rules:
+    - name: no_sudo
+      pattern: "\\bsudo\\b"
+      applies_to: input      # input | output | both
+      action: block
+      message: "sudo commands are not allowed"
+```
+
+## Programmatic Use
+
+For repeated calls with the same config, use `CompiledGuardrails` to avoid recompiling regex patterns on every check:
+
+```rust
+let compiled = CompiledGuardrails::new(&config);
+
+// Check user input before sending to agent
+let input_result = compiled.check_input(user_prompt);
+if !input_result.passed {
+    return Err("Input blocked by guardrail");
+}
+
+// Check agent output before returning to caller
+let output_result = compiled.check_output(&agent_response);
+// output_result.content may be modified (e.g., PII redacted)
+return Ok(output_result.content);
+```
+
+## PII Detection Patterns
+
+The built-in PII detector matches:
+- US phone numbers: `(555) 123-4567`, `+1-555-123-4567`
+- Email addresses: `user@example.com`
+- SSNs: `123-45-6789`
+- Credit cards: `4111 1111 1111 1111`
+- IP addresses: `192.168.1.1`
+
+When `pii_action: redact`, matched strings are replaced with `[phone_number_REDACTED]`, `[email_REDACTED]`, etc.
+
+## Violation Actions
+
+| Action | Behavior |
+|--------|----------|
+| `block` | Sets `passed: false`; content is not modified |
+| `warn` | Sets violations but `passed: true`; content is not modified |
+| `redact` | Modifies content to remove the violation; `passed: true` |
+
+Multiple violations can coexist. If any violation has action `block`, the result's `passed` is `false`.
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Pre-compiled regex.** `CompiledGuardrails` compiles all regex patterns once at construction time. This matters because guardrail checks run on every input and output — recompiling patterns on each call would add measurable latency at high request rates.
+
+**Non-blocking redaction.** PII redaction uses action `redact` by default rather than `block`. For most deployments, silently removing a phone number from a response is preferable to failing the entire request. Operators who need stricter enforcement can set `pii_action: block`.
+
+**Separate input and output checks.** Some rules should only apply to one direction. A `no_sudo` rule on input prevents users from asking the agent to run sudo commands, but the agent's response might legitimately reference sudo in documentation. The `applies_to` field makes this distinction explicit.
+
+</Why>

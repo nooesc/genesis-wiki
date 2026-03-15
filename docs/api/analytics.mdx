@@ -1,14 +1,164 @@
 ---
 title: "Analytics API"
-description: "Insights and usage"
+description: "Session insights, token usage statistics, and tool inventory"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ApiEndpoint } from '@site/src/components/ApiEndpoint';
+
+<ApiEndpoint method="GET" path="/insights" auth={true}>
 
 <What>
 
-*Content coming soon.*
+Session-level usage insights over a rolling time window. Returns aggregate statistics about conversations: session counts, message volumes, token consumption, and cost estimates broken down by day or platform.
 
 </What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `days` | `integer` | `30` | Number of days to include in the analysis window |
+
+## Response
+
+```json
+{
+  "period_days": 30,
+  "total_sessions": 142,
+  "total_messages": 1893,
+  "total_input_tokens": 2840000,
+  "total_output_tokens": 890000,
+  "estimated_cost_usd": 12.45,
+  "sessions_by_platform": {
+    "api": 98,
+    "telegram": 31,
+    "cli": 13
+  },
+  "daily_activity": [
+    {
+      "date": "2026-03-15",
+      "sessions": 7,
+      "messages": 94,
+      "input_tokens": 142000,
+      "output_tokens": 41000
+    }
+  ]
+}
+```
+
+</How>
+
+<Why>
+
+Use insights to understand usage trends, monitor cost growth, and identify which platforms generate the most traffic. The daily breakdown helps detect anomalies like sudden token spikes that might indicate a runaway agent loop.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/usage" auth={true}>
+
+<What>
+
+Aggregate token usage statistics across all sessions: lifetime input and output token totals and an estimated cost breakdown by model.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "total_input_tokens": 45200000,
+  "total_output_tokens": 12800000,
+  "total_sessions": 3841,
+  "by_model": [
+    {
+      "model": "claude-sonnet-4",
+      "input_tokens": 38000000,
+      "output_tokens": 10500000,
+      "sessions": 3200
+    },
+    {
+      "model": "gpt-4.1-mini",
+      "input_tokens": 7200000,
+      "output_tokens": 2300000,
+      "sessions": 641
+    }
+  ]
+}
+```
+
+</How>
+
+<Why>
+
+Track lifetime token consumption to forecast infrastructure costs, compare usage across models, and validate that model selection changes have the expected impact on token efficiency.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/tools" auth={true}>
+
+<What>
+
+List all available tools: both Genesis built-in tools and any tools exposed by connected MCP servers. Returns tool names, descriptions, and their JSON Schema parameter definitions.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "builtin_tools": [
+    {
+      "name": "shell_exec",
+      "description": "Execute a shell command and return its output",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string", "description": "Shell command to run" }
+        },
+        "required": ["command"]
+      }
+    }
+  ],
+  "builtin_count": 60,
+  "mcp_tools": [
+    {
+      "name": "mcp_filesystem__read_file",
+      "description": "Read a file from the filesystem",
+      "source": "mcp"
+    }
+  ],
+  "mcp_count": 8,
+  "total": 68
+}
+```
+
+MCP tools are prefixed with `mcp_{server_name}__` to avoid naming collisions with built-in tools.
+
+</How>
+
+<Why>
+
+Use the tools list to discover what capabilities are available in a specific Genesis deployment, verify that an expected MCP server is connected and its tools are registered, or build tooling that needs to introspect the available tool schema (e.g., for documentation generation or LLM fine-tuning data).
+
+</Why>
+
+</ApiEndpoint>

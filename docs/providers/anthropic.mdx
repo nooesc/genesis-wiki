@@ -1,9 +1,10 @@
 ---
 title: "Anthropic"
-description: "Anthropic with prompt caching"
+description: "Anthropic Messages API adapter with prompt caching and extended thinking support"
 crate: genesis-provider
 source_files:
   - crates/genesis-provider/src/anthropic_types.rs
+  - crates/genesis-provider/src/client.rs
 last_synced_commit: "0000000"
 ---
 
@@ -11,6 +12,93 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+The Anthropic backend uses the native Messages API (`/messages` endpoint) with a full translation layer between OpenAI Chat Completions format and Anthropic's wire format. It supports prompt caching, extended thinking (extended reasoning), tool use, and vision.
+
+**Supported models (with known metadata):**
+
+| Model | Context | Max output | Vision | Thinking |
+|---|---|---|---|---|
+| `claude-sonnet-4-20250514` | 200,000 | 64,000 | Yes | Yes |
+| `claude-opus-4-20250514` | 200,000 | 32,000 | Yes | Yes |
+| `claude-haiku-4-5` | 200,000 | 8,192 | Yes | Yes |
+| `claude-haiku-3.5-20241022` | 200,000 | 8,192 | Yes | No |
+
+**Pricing (USD per million tokens, as of early 2026):**
+
+| Model | Input | Output |
+|---|---|---|
+| `claude-opus-4` | $15.00 | $75.00 |
+| `claude-sonnet-4` | $3.00 | $15.00 |
+| `claude-haiku-4` | $0.80 | $4.00 |
 
 </What>
+
+<How>
+
+### Configuration
+
+```yaml
+# ~/.genesis/config.yaml
+model: claude-sonnet-4-20250514
+backend: anthropic
+```
+
+API key is read from `ANTHROPIC_API_KEY`. The default base URL is `https://api.anthropic.com/v1`. Requests go to the `/messages` endpoint.
+
+### Request headers
+
+The client automatically sets:
+- `x-api-key: {ANTHROPIC_API_KEY}`
+- `anthropic-version: 2023-06-01`
+- `anthropic-beta: token-efficient-tools-2025-02-19,fine-grained-tool-streaming-2025-05-14`
+
+### Format translation
+
+The translation layer in `anthropic_types.rs` converts the OpenAI `ChatCompletionRequest` to an `AnthropicRequest`:
+
+- The `system` message is extracted from the messages array and placed in the top-level `system` field
+- User/assistant text content is mapped to Anthropic content blocks
+- `tool_calls` (OpenAI format) → `tool_use` content blocks
+- Tool results → `tool_result` content blocks
+- Response: `AnthropicResponse` → `ChatCompletionResponse`
+
+### Prompt caching
+
+For the `anthropic` backend (and `openrouter`), `inject_cache_control` automatically adds `cache_control: {"type": "ephemeral"}` to:
+
+1. All system messages — converting them from a string to a content-block array with a `cache_control` marker
+2. The last tool in the tools list — placing the cache marker at the tool level
+
+This enables Anthropic's prompt caching feature, which can significantly reduce cost and latency for repeated conversations with the same system prompt and tool list.
+
+### Extended thinking
+
+When a `ThinkingConfig` is present in the request, the translation layer adds an `AnthropicThinking` block to the request:
+
+```rust
+AnthropicThinking {
+    thinking_type: "enabled",
+    budget_tokens: config.budget_tokens,
+}
+```
+
+Thinking content blocks returned by the model are mapped back to the response and stored in `provider_metadata` on the message.
+
+### Streaming
+
+Anthropic's SSE event types differ from OpenAI's. The streaming path translates Anthropic events to `ChatCompletionChunk` objects:
+- `content_block_delta` → text delta or tool argument delta
+- `message_delta` → finish reason and usage
+- `message_stop` → stream end
+
+</How>
+
+<Why>
+
+**Native API over OpenAI-compatible proxy.** Using Anthropic's native `/messages` endpoint rather than a compatibility layer gives access to features like extended thinking, fine-grained tool streaming, and token-efficient tools that may not be exposed through the OpenAI-compatible path.
+
+**Automatic `cache_control` injection.** Injecting cache markers transparently means callers do not need to know about prompt caching — it is applied to every Anthropic and OpenRouter request automatically, reducing costs for users with large system prompts and many tools without any configuration.
+
+**Beta header inclusion.** The `anthropic-beta` header enables beta features (token-efficient-tools, fine-grained-tool-streaming) that are harmless when not applicable and reduce costs/latency when they are. Including them globally avoids per-feature opt-ins.
+
+</Why>

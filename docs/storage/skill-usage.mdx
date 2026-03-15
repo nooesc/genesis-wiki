@@ -1,7 +1,9 @@
 ---
-title: "Skill Usage Store"
-description: "Usage tracking"
+title: "SkillUsageStore"
+description: "Per-skill usage tracking, outcome recording, and aggregate statistics"
 crate: genesis-storage
+source_files:
+  - crates/genesis-storage/src/lib.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +11,71 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+`SkillUsageStore` records each time the agent applies a skill, capturing the outcome and optional feedback. It provides aggregate statistics (total uses, success/failure counts, last used timestamp, refinement count) used by the `GET /skills/{name}/usage` and `GET /skills/{name}/usage/recent` API endpoints.
+
+**`skill_usages` table schema:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | Usage record identifier |
+| `skill_name` | TEXT NOT NULL | Foreign key to skills (CASCADE DELETE) |
+| `session_id` | TEXT | Session in which the skill was used (nullable) |
+| `outcome` | TEXT NOT NULL | `success`, `partial`, `failure`, or `unknown` |
+| `feedback` | TEXT | Agent's free-text notes on what worked or didn't |
+| `refined` | INTEGER (bool) | 1 if this usage led to a skill refinement |
+| `created_at` | TEXT | Defaults to CURRENT_TIMESTAMP |
 
 </What>
+
+<How>
+
+### Recording a usage
+
+```rust
+let store = SkillUsageStore::new(&database_path);
+let usage = store.record_usage(
+    "deploy-web-app",
+    Some("session-abc"),
+    "success",
+    Some("Completed in 3 minutes, no issues"),
+)?;
+```
+
+### Marking a refinement
+
+```rust
+store.mark_refined(usage.id)?;
+// Sets refined = 1 on the usage record
+```
+
+### Aggregate statistics
+
+```rust
+let stats: SkillUsageStats = store.stats("deploy-web-app")?;
+// stats.total_uses: i64
+// stats.successes: i64
+// stats.failures: i64
+// stats.last_used: Option<String>
+// stats.times_refined: i64
+```
+
+The stats query uses `SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END)` for success and failure counts. Note that `partial` and `unknown` outcomes are counted in `total_uses` but not in `successes` or `failures`.
+
+### Recent usage records
+
+```rust
+let recent: Vec<StoredSkillUsage> = store.recent_usages("deploy-web-app", 20)?;
+// Ordered by created_at DESC
+```
+
+</How>
+
+<Why>
+
+**Outcome enum as text.** Storing outcome as `TEXT NOT NULL DEFAULT 'unknown'` rather than an integer enum keeps the database human-readable for direct inspection and allows flexible aggregation with CASE expressions.
+
+**Refinement flag.** The `refined` boolean gives the skill creation nudge system a way to record that a particular usage led to the agent improving the skill definition. This makes it easy to query "how many times has this skill been refined" without scanning the skills table version history.
+
+**Cascade delete.** When a skill is deleted from `skills`, all its usage records are automatically removed via `ON DELETE CASCADE`. Usage data for a deleted skill has no value without the skill definition.
+
+</Why>

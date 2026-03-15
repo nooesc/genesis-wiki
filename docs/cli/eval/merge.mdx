@@ -1,13 +1,56 @@
 ---
 title: "eval merge"
-description: "Merge trajectory directories"
-last_synced_commit: "0000000"
+description: "Merge trajectory directories into a single output directory"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval merge" usage="genesis eval merge <SOURCES...> --output <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval merge`?
+
+The `merge` command copies trajectory JSON files from one or more source directories into a single output directory. It is useful for combining datasets from separate batch runs, different machines, or different experiments into one unified collection. The optional `--dedup` flag deduplicates by session ID during the merge, keeping only the first occurrence of each session ID encountered across the sources (processed left-to-right).
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<SOURCES>` | `string...` | Yes | One or more source directories containing trajectory JSON files |
+| `--output <DIR>` | `string` | Yes | Output directory to merge into |
+| `--dedup` | `bool` | No | Deduplicate by session ID, keeping the first occurrence |
+
+## Examples
+
+```bash
+# Merge two run directories into one dataset
+genesis eval merge ./run-a ./run-b --output ./combined
+
+# Merge three sources and deduplicate by session ID
+genesis eval merge ./run-a ./run-b ./run-c --output ./combined --dedup
+
+# Merge a single directory (effectively a copy with optional dedup)
+genesis eval merge ./raw --output ./clean --dedup
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+Sources are processed in the order they are provided on the command line. When `--dedup` is enabled, the first file with a given session ID wins — later sources cannot overwrite it. Without `--dedup`, all files are copied and filename collisions are resolved by appending a numeric suffix to the destination filename. The output directory is created if it does not exist. Source directories are never modified.
+
+</Why>
+
+</CliCommand>

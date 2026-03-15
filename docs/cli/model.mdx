@@ -1,14 +1,112 @@
 ---
 title: "genesis model"
-description: "LLM provider/model management"
+description: "Manage the active LLM provider and model"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-config/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="model" usage="genesis model <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis model`?
+
+The `model` command inspects and changes the LLM provider and model that Genesis uses for all agent interactions. Changes made with `model set` are persisted to the config file, so they apply to every subsequent `chat`, `run`, `serve`, and `batch` invocation.
+
+Genesis supports multiple provider backends — OpenAI, Anthropic, Google Gemini, OpenRouter, vLLM, Ollama, and custom OpenAI-compatible endpoints — and the `model` command gives you a unified interface to switch between them without hand-editing YAML.
 
 </What>
+
+<How>
+
+## Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `show` | Show the active provider and model |
+| `list` | List popular models grouped by provider |
+| `set <MODEL>` | Switch the active model (persisted to config file) |
+
+## Options for `model list`
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--backend <NAME>` | `string` | Filter by provider backend (e.g. `openai`, `anthropic`, `google`) |
+
+## Options for `model set <MODEL>`
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--backend <NAME>` | `string` | Provider backend (e.g. `openai`, `openrouter`, `anthropic`) |
+| `--base-url <URL>` | `string` | Base URL override for the provider API |
+| `--api-key-env <VAR>` | `string` | Environment variable holding the API key |
+
+## Examples
+
+**Show the currently active model:**
+```bash
+genesis model show
+```
+
+**List all known models:**
+```bash
+genesis model list
+```
+
+**List only Anthropic models:**
+```bash
+genesis model list --backend anthropic
+```
+
+**Switch to Claude Sonnet:**
+```bash
+genesis model set claude-sonnet-4-6 --backend anthropic
+```
+
+**Switch to GPT-4.1 Mini via OpenAI:**
+```bash
+genesis model set gpt-4.1-mini --backend openai
+```
+
+**Switch to a model via OpenRouter:**
+```bash
+genesis model set meta-llama/llama-4-scout --backend openrouter
+```
+
+**Point at a local vLLM or Ollama server:**
+```bash
+genesis model set qwen3-32b \
+  --backend openai \
+  --base-url http://localhost:8000/v1 \
+  --api-key-env VLLM_API_KEY
+```
+
+</How>
+
+<Why>
+
+## Unified Provider Abstraction
+
+All LLM communication in Genesis uses the OpenAI Chat Completions format. Provider-specific adapters (Anthropic, Gemini) translate the request and response transparently in `genesis-provider`. This means `model set` only needs to update three config values — `provider.backend`, `provider.model`, and optionally `provider.base_url` — and the rest of the system adapts automatically.
+
+## Persisted Config Changes
+
+`model set` calls `genesis_config::set_value_in_file`, which performs an in-place YAML update on the config file. It does not rewrite the whole file — it patches only the affected keys, preserving comments and custom formatting. This is the same mechanism used by `genesis config set`.
+
+## Known Model Metadata
+
+The `model list` command draws from a static metadata table of 14+ popular models with their context window sizes and capability flags (vision, function calling, streaming). This is a curated list for convenience, not an exhaustive registry — any model string accepted by your provider's API can be passed to `model set`.
+
+## Tool Provider
+
+Some configurations use a separate `tool_provider` for structured tool call parsing (useful when routing through OpenRouter or a load balancer). The `genesis benchmark --tool-provider` flag lets you measure latency on the tool provider independently.
+
+</Why>
+
+</CliCommand>

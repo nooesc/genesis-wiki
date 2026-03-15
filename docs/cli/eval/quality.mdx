@@ -1,13 +1,72 @@
 ---
 title: "eval quality"
-description: "Trajectory quality scoring"
-last_synced_commit: "0000000"
+description: "Score trajectory quality for training data filtering"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-core/src/quality.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval quality" usage="genesis eval quality <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval quality`?
+
+The `quality` command scores every trajectory in a directory using the `genesis_core::quality` scorer and prints a ranked list. Each trajectory receives an overall score between 0.0 and 1.0 derived from six weighted dimensions: outcome, signal-to-noise ratio, tool diversity, conversation depth, efficiency, and completeness. Scores below a threshold can be used to reject low-quality trajectories before including them in a training dataset. Use `--min-score` to filter the output, or `--worst-first` to surface the lowest-quality trajectories first.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Directory containing trajectory JSON files |
+| `--recursive` | `bool` | No | Recursively scan nested directories |
+| `--min-score <SCORE>` | `f64` | No | Minimum quality score to include in output (0.0–1.0); default shows all |
+| `--worst-first` | `bool` | No | Sort by score ascending (worst first) instead of descending |
+
+## Examples
+
+```bash
+# Score all trajectories, best first
+genesis eval quality ./trajectories
+
+# Only show trajectories scoring 0.7 or above
+genesis eval quality ./trajectories --min-score 0.7
+
+# Surface the worst trajectories for manual review
+genesis eval quality ./trajectories --worst-first
+
+# Recursively score and filter to 0.6+
+genesis eval quality ./trajectories --recursive --min-score 0.6
+```
+
+</How>
+
+<Why>
+
+## Scoring Dimensions
+
+The quality scorer in `genesis-core/src/quality.rs` evaluates six dimensions with the following default weights:
+
+| Dimension | Weight | Description |
+|-----------|--------|-------------|
+| `outcome` | 0.25 | Did the trajectory reach a successful outcome? |
+| `signal_to_noise` | 0.20 | Ratio of useful content vs. boilerplate/errors |
+| `tool_diversity` | 0.10 | Diversity of tool usage across the trajectory |
+| `depth` | 0.15 | Multi-turn depth (single-turn scores lower) |
+| `efficiency` | 0.15 | Fewer wasted turns, retries, and repeated errors |
+| `completeness` | 0.15 | Presence of all expected parts (user msg, response, outcome) |
+
+The composite score is a weighted average of these six values. The `--min-score` flag and `eval filter --min-quality` flag both use this same scorer, so results are consistent across commands.
+
+</Why>
+
+</CliCommand>

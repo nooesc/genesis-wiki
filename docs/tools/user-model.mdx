@@ -1,16 +1,120 @@
 ---
 title: "User Model"
-description: "User trait modeling"
+description: "Record and recall observations about the user to personalize responses over time"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/user_model.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="user_observe" module="builtins/user_model.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Records an observation about the user as a typed trait in persistent storage. Each observation contributes evidence to the trait's confidence score. The first observation for a trait starts at 50% confidence; additional observations for the same key increase the confidence toward 100%, allowing Eve to become more certain about a trait over time as she sees consistent evidence.
+
+Traits are organized by category (e.g. `preference`, `communication_style`, `expertise`, `context`) and addressed by a stable `trait_key`. The same key can be observed multiple times; each call updates the existing record rather than creating a duplicate.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `trait_key` | `string` | Yes | Stable identifier for the trait (e.g. `prefers_dark_mode`, `communication_style_formal`) |
+| `category` | `string` | Yes | Category grouping (e.g. `preference`, `communication_style`, `expertise`) |
+| `value` | `string` | Yes | Human-readable description of the observed trait value |
+
+## Example
+
+```json
+{
+  "name": "user_observe",
+  "arguments": {
+    "trait_key": "prefers_concise_answers",
+    "category": "communication_style",
+    "value": "User consistently asks for shorter explanations and prefers bullet points over prose"
+  }
+}
+```
+
+**Response:**
+```
+Recorded: `prefers_concise_answers` = "User consistently asks..." (category: communication_style, confidence: 50%, observations: 1)
+```
+
+After a second observation for the same key:
+```
+Recorded: `prefers_concise_answers` = "..." (category: communication_style, confidence: 67%, observations: 2)
+```
+
+</How>
+
+<Why>
+
+The confidence model is Bayesian-inspired but simple: the first observation yields 50% confidence, and each subsequent observation increases confidence using `1 - 1/(n+1)` approximation (implemented in `UserModelStore::observe`). This models diminishing returns — the 10th observation adds less certainty than the 2nd. At high observation counts, confidence asymptotically approaches 100% but never reaches it.
+
+The `trait_key` is designed to be a stable, snake_case identifier so Eve can update a trait without creating duplicates when re-observing the same behavior in future sessions. The `session_id` is recorded alongside each observation for auditability, allowing a developer to trace which session generated each data point.
+
+</Why>
+
+</ToolRef>
+
+<ToolRef name="user_model" module="builtins/user_model.rs" crate="genesis-tools">
+
+<What>
+
+Retrieves the accumulated user model — everything Eve has learned about the user across all sessions. Can be filtered by category or by a minimum confidence threshold to surface only high-confidence traits.
+
+This tool is typically called at the start of a session to personalize the system prompt, or during a session when Eve needs to recall a specific user preference before making a recommendation.
+
+</What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `category` | `string` | No | — | Filter traits to a single category |
+| `min_confidence` | `string` | No | `"0.0"` | Minimum confidence threshold (0.0–1.0); filters out low-confidence traits |
+
+## Example: All traits
+
+```json
+{ "name": "user_model", "arguments": {} }
+```
+
+## Example: High-confidence preferences only
+
+```json
+{
+  "name": "user_model",
+  "arguments": {
+    "category": "preference",
+    "min_confidence": "0.7"
+  }
+}
+```
+
+**Response (formatted by `format_user_traits`):**
+```
+## preference
+- prefers_dark_mode: "Consistently enables dark mode" (confidence: 83%, 5 observations)
+- prefers_concise_answers: "Asks for shorter responses" (confidence: 75%, 3 observations)
+```
+
+</How>
+
+<Why>
+
+When both `category` and `min_confidence` are provided, `category` takes precedence — the tool uses the `list_by_category` store method rather than `confident_traits`. This is because category-based lookup is more specific and the user is likely filtering to a known domain. If you need both a category filter and a confidence threshold, filter by category first and then apply confidence filtering yourself to the results.
+
+</Why>
+
+</ToolRef>

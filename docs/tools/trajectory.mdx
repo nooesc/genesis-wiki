@@ -1,16 +1,99 @@
 ---
 title: "Trajectory"
-description: "Trajectory tracking"
+description: "Interact with trajectory recordings for training data collection and quality annotation"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/trajectory.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="trajectory" module="builtins/trajectory.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+Lets the agent interact with trajectory recordings stored on disk. A trajectory is a JSON file that captures the full step-by-step execution of a session: user messages, assistant messages, tool calls, tool results, and the system prompt hash. Trajectories are written by the agent loop when recording is enabled.
+
+The tool supports four actions:
+
+- **status** — Check whether a trajectory file exists for the current session and report its step count, tag count, and completion state.
+- **export** — Read and return the trajectory in `json`, `sharegpt`, or `chatml` format for use in training pipelines.
+- **tag** — Add a semantic label to the trajectory (e.g. `training`, `needs-review`, `high-quality`). Tags are deduplicated.
+- **set_outcome** — Mark the trajectory's final outcome as `success`, `failure` (with optional reason), or `abandoned`.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | `string` | Yes | One of: `status`, `export`, `tag`, `set_outcome` |
+| `format` | `string` | Required for `export` | Output format: `json`, `sharegpt`, or `chatml` |
+| `tag` | `string` | Required for `tag` | Tag string to add to the trajectory |
+| `outcome` | `string` | Required for `set_outcome` | One of: `success`, `failure`, `abandoned` |
+| `reason` | `string` | Optional for `set_outcome` with `failure` | Reason text for failure outcome |
+
+## Examples
+
+**Check status:**
+```json
+{ "name": "trajectory", "arguments": { "action": "status" } }
+```
+```
+trajectory recording active for session `sess-abc123`
+steps: 12
+tags: 1
+outcome set: false
+completed: false
+file: /home/user/.genesis/trajectories/sess-abc123.json
+```
+
+**Tag as training data:**
+```json
+{ "name": "trajectory", "arguments": { "action": "tag", "tag": "training" } }
+```
+
+**Mark outcome:**
+```json
+{
+  "name": "trajectory",
+  "arguments": {
+    "action": "set_outcome",
+    "outcome": "failure",
+    "reason": "model exceeded iteration budget before completing the task"
+  }
+}
+```
+
+**Export in ShareGPT format:**
+```json
+{ "name": "trajectory", "arguments": { "action": "export", "format": "sharegpt" } }
+```
+
+### ShareGPT Role Mapping
+
+| Step type | ShareGPT `from` field |
+|-----------|----------------------|
+| `user_message` | `human` |
+| `assistant_message` | `gpt` |
+| `tool_call` | `tool_call` |
+| `tool_result` | `tool_result` |
+| `system_message` | `system` |
+
+</How>
+
+<Why>
+
+Trajectory files live in `{data_dir}/trajectories/{session_id}.json`. The tool operates on the current session's trajectory only — there is no way to access other sessions' trajectories from within the same agent call. This is intentional: trajectory annotation is a self-referential operation the agent performs about its own execution.
+
+Tags are stored in a simple JSON array and deduplicated on insert (`contains` check before push). This avoids duplicates without needing a set data structure in the serialized format, keeping the JSON schema simple and human-readable.
+
+The `set_outcome` action stores the outcome as a typed JSON object (`{"type": "success"}`, `{"type": "failure", "reason": "..."}`) rather than a plain string. This structure is consumed by the `genesis eval` CLI tools which analyze trajectory quality across a corpus.
+
+</Why>
+
+</ToolRef>

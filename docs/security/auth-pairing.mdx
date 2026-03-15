@@ -1,16 +1,101 @@
 ---
 title: "Auth and Pairing"
-description: "OAuth and DM pairing"
+description: "OAuth device code flow and DM pairing authorization"
 crate: genesis-auth
 source_files:
   - crates/genesis-auth/src/codex.rs
-last_synced_commit: "0000000"
+  - crates/genesis-storage/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is Auth and Pairing?
+
+Genesis has two distinct authorization systems that serve different access surfaces:
+
+**OAuth device code flow** (`genesis-auth`) is used for authenticating Genesis itself with OpenAI's Codex API. It implements the OAuth 2.0 device authorization grant: Genesis requests a user code, the operator visits a URL to authorize, and Genesis polls until authorization completes and tokens are issued. Tokens (access + refresh) are stored in the auth store and automatically refreshed when they approach expiry (within 120 seconds).
+
+**DM pairing** (`PairingStore` in `genesis-storage`) is used to gate unknown messaging platform users before they can interact with the agent. When an unapproved user sends a message to Eve via Telegram, Slack, Discord, WhatsApp, or Signal, they receive a short one-time code. The bot owner approves the code via the CLI or API (`POST /pairing/approve`). Once approved, the user's platform+user_id pair is stored in `pairing_approved` and they can interact with Eve going forward.
+
+These two systems are independent. OAuth handles Genesis's own provider credentials; pairing handles per-user authorization on messaging platforms.
 
 </What>
+
+<How>
+
+## OAuth Device Code Flow
+
+```bash
+# Initiate login
+genesis login
+```
+
+The flow:
+1. `request_device_code` POSTs to `CODEX_DEVICE_CODE_URL` → receives `user_code` and `device_auth_id`.
+2. User opens the verification URL and enters the `user_code`.
+3. `poll_for_authorization` polls `CODEX_DEVICE_POLL_URL` every 5 seconds (up to 15 minutes) until authorization succeeds.
+4. `exchange_code_for_tokens` exchanges the authorization code and code verifier for access and refresh tokens via PKCE.
+5. Tokens are stored in `~/.genesis/auth.json` (or `GENESIS_AUTH_STORE_PATH`).
+
+**Token refresh** happens automatically in `resolve_credentials` when the access token expires within 120 seconds. The refresh uses a dedicated `reqwest::Client` with a 15-second timeout. Results are cached in a process-global `RwLock<HashMap<PathBuf, CachedEntry>>` with a 60-second TTL to avoid redundant refresh calls.
+
+**Codex CLI migration:** If no Genesis auth tokens exist, `import_codex_cli_tokens` reads `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`) to import existing Codex CLI tokens automatically.
+
+## DM Pairing
+
+The pairing flow for messaging platforms:
+
+```
+User sends first message
+  → check_pairing(platform, user_id, user_name)
+  → PairingCheck::NeedsPairing(code)
+  → Bot replies: "Your pairing code is ABCD-EFGH. Ask the bot owner to approve it."
+
+Bot owner approves:
+  POST /pairing/approve  { "platform": "telegram", "code": "ABCDEFGH" }
+  → User moved from pairing_pending → pairing_approved
+
+User sends next message:
+  → PairingCheck::Approved
+  → Agent processes the message
+```
+
+Pairing codes are 8 characters from an unambiguous alphabet (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, no 0/O or 1/I). Codes expire after 1 hour. A maximum of 3 pending codes per platform prevents abuse.
+
+## API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /pairing/approved?platform=telegram` | List approved users |
+| `GET /pairing/pending?platform=telegram` | List pending codes |
+| `POST /pairing/approve` `{"platform":"telegram","code":"ABCDEFGH"}` | Approve a code |
+| `POST /pairing/revoke` `{"platform":"telegram","user_id":"12345"}` | Revoke a user |
+| `POST /pairing/clear-pending` `{"platform":"telegram"}` | Clear pending codes |
+
+## CLI
+
+```bash
+genesis pairing list-approved
+genesis pairing list-pending
+genesis pairing approve ABCDEFGH
+genesis pairing revoke --platform telegram --user-id 12345
+```
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Device code flow over API key.** The device authorization grant requires no client secret. Genesis can initiate the flow without storing credentials, and the user authorizes in a browser. This is safer than distributing API keys and allows credential rotation without redeployment.
+
+**Pairing over static allowlists.** Hardcoding user IDs in config would require a restart every time a new user is authorized. The pairing system allows runtime authorization without restarting Genesis and stores approvals persistently in SQLite.
+
+**8-character unambiguous codes.** Short codes are easier to communicate verbally or via a screenshot. The unambiguous alphabet (no 0/O, 1/I) prevents transcription errors. 1-hour expiry limits the window for code interception.
+
+**Platform isolation.** Approval for `telegram` does not grant access to `slack`. This matters if different messaging platforms are operated by different teams or have different trust levels.
+
+</Why>

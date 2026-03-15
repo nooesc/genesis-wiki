@@ -1,14 +1,59 @@
 ---
 title: "genesis logout"
-description: "Sign out and clear credentials"
+description: "Sign out and clear stored OAuth credentials"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-auth/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="logout" usage="genesis logout" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis logout`?
+
+The `logout` command clears all stored OAuth credentials that were written by `genesis login`. After running `genesis logout`, any provider features that depend on OAuth tokens will stop working until you run `genesis login` again.
+
+This is a simple, targeted operation: it removes the auth file (`~/.genesis/auth.json`) that holds the access and refresh tokens. It does not affect your config file, your database, or your session history.
 
 </What>
+
+<How>
+
+## Usage
+
+```bash
+genesis logout
+```
+
+No flags are required.
+
+## Example
+
+```bash
+$ genesis logout
+Signed out. Credentials cleared from ~/.genesis/auth.json
+```
+
+</How>
+
+<Why>
+
+## When to Use Logout
+
+`genesis logout` is useful in a few scenarios:
+
+- **Security**: You are leaving a shared machine or want to ensure no tokens are cached before handing it off.
+- **Re-authentication**: Your OAuth tokens have expired in an unrecoverable way and you need a fresh `genesis login`.
+- **Switching accounts**: You want to log in under a different user account with the same provider.
+
+Logout only removes the OAuth auth file. If you are using API key authentication (configured via `genesis init --api-key-env`), there is nothing to log out of — simply unset the environment variable or remove it from your shell profile.
+
+</Why>
+
+</CliCommand>

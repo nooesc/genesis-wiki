@@ -1,14 +1,67 @@
 ---
 title: "genesis bootstrap"
-description: "Print starter assets"
+description: "Print starter assets for first-time setup"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="bootstrap" usage="genesis bootstrap <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis bootstrap`?
+
+The `bootstrap` command prints starter assets useful for getting Genesis set up on a new machine or in a new environment. Currently it has one sub-command, `config`, which prints a starter `config.yaml` populated with the resolved defaults for your platform and environment.
+
+Unlike `genesis init` (which interactively writes a config file), `bootstrap config` simply prints the YAML to stdout. This is useful for reviewing what a default config looks like, piping it to a file manually, or incorporating into provisioning scripts where you want full control over the write step.
 
 </What>
+
+<How>
+
+## Sub-commands
+
+| Sub-command | Description |
+|-------------|-------------|
+| `config` | Print a starter config using the resolved defaults |
+
+## Examples
+
+**Print a starter config.yaml:**
+```bash
+genesis bootstrap config
+```
+
+**Save it to the standard config location:**
+```bash
+genesis bootstrap config > ~/.genesis/config.yaml
+```
+
+**Preview what the defaults look like:**
+```bash
+genesis bootstrap config | head -40
+```
+
+**Compare to your current config:**
+```bash
+diff <(genesis bootstrap config) ~/.genesis/config.yaml
+```
+
+</How>
+
+<Why>
+
+## Starter Config vs. `genesis init`
+
+`genesis init` is the recommended path for interactive first-time setup. `genesis bootstrap config` is the escape hatch for users who prefer to control the exact config file contents, or who want to see the complete default structure before committing to it.
+
+The "resolved defaults" mean that any environment variables that affect default values (like `GENESIS_MODEL` overriding the default model) are baked into the printed output. This makes the output a snapshot of what Genesis would actually use if you ran it right now with no config file present.
+
+</Why>
+
+</CliCommand>

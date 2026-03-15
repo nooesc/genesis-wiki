@@ -1,16 +1,76 @@
 ---
 title: "Browse"
-description: "Web browsing with readability"
+description: "Fetch a web page and extract readable text"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/browse.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="browse" module="builtins/browse.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does browse Do?
+
+`browse` fetches a web page and extracts its readable text content. For HTML pages it removes `<script>`, `<style>`, `<nav>`, `<header>`, and `<footer>` blocks entirely, strips all remaining tags, decodes common HTML entities, and normalizes whitespace. Plain text and JSON responses are returned as-is. Binary content returns a description of the content type and size.
+
+Use the optional `selector` parameter to extract only content from a specific HTML tag (e.g., `"article"` or `"main"`) before processing, which helps focus on the main content of pages with heavy navigation chrome.
+
+The tool blocks the same private IP ranges and non-HTTP schemes as `web_request` (SSRF protection). Responses are truncated at 64 KiB. Up to 5 HTTP redirects are followed automatically.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `url` | `string` | Yes | -- | The URL to fetch and extract text from |
+| `selector` | `string` | No | -- | HTML tag to scope extraction, e.g. `"article"`, `"main"` |
+
+## Example
+
+```json
+{
+  "name": "browse",
+  "arguments": {
+    "url": "https://docs.rust-lang.org/book/ch01-01-installation.html",
+    "selector": "main"
+  }
+}
+```
+
+**Response:**
+```
+URL: https://docs.rust-lang.org/book/ch01-01-installation.html
+HTTP 200
+
+Installation
+The first step is to install Rust. We'll download Rust through rustup...
+```
+
+</How>
+
+<Why>
+
+## HTML Processing Pipeline
+
+The extraction pipeline runs in order:
+
+1. If `selector` is provided, extract content from all matching tag instances. If no match is found, fall back to the full HTML.
+2. Remove `<script>`, `<style>`, `<nav>`, `<header>`, and `<footer>` blocks (tag + inner content).
+3. Strip all remaining HTML tags (character-level state machine, not a real HTML parser).
+4. Decode common HTML entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&nbsp;`, `&mdash;`, `&ndash;`, `&hellip;`, etc.).
+5. Trim and filter empty lines, then join with single newlines.
+6. After final assembly, collapse runs of 3+ consecutive newlines to 2.
+
+The tag removal uses a case-insensitive search on a pre-lowercased copy of the HTML while preserving the original casing in the output. The `remove_tag_blocks_multi` function computes the lowercase string only once and reuses it across successive tag removals.
+
+</Why>
+
+</ToolRef>

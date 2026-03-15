@@ -1,14 +1,86 @@
 ---
 title: "WhatsApp"
-description: "WhatsApp integration"
+description: "WhatsApp Cloud API integration"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/platforms/whatsapp.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is the WhatsApp Platform?
+
+The WhatsApp platform connects Eve to WhatsApp via Meta's WhatsApp Cloud API (Business). Incoming messages are delivered as webhook POST requests; Eve processes text messages through the agent and replies via the Cloud API.
+
+The webhook endpoint serves two functions:
+
+- **GET `/whatsapp/webhook`:** Handles the one-time verification handshake required by Meta. Meta sends a `hub.challenge` query parameter; the handler returns it to confirm ownership.
+- **POST `/whatsapp/webhook`:** Receives real-time message events. The payload structure wraps messages inside a nested `entry` → `changes` → `value.messages` array.
+
+Only `text`-type messages are processed. Status updates and other change types (delivery receipts, etc.) are silently ignored. Each sender phone number has a stable session ID (`wa-{phone_number}`), so conversation history persists.
+
+DM pairing is required: new senders receive a pairing code before the agent processes their messages.
 
 </What>
+
+<How>
+
+## Setup
+
+1. Create a WhatsApp Business app in the [Meta Developer Portal](https://developers.facebook.com).
+2. Set the webhook URL to `https://your-server/whatsapp/webhook` and configure the verify token.
+3. Set the following environment variables:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `WHATSAPP_TOKEN` | Yes | Permanent access token for sending messages |
+| `WHATSAPP_PHONE_NUMBER_ID` | Yes | Phone number ID (from Meta Developer Portal) |
+| `WHATSAPP_VERIFY_TOKEN` | Yes | Custom token for webhook GET verification |
+| `WHATSAPP_APP_SECRET` | Yes | App secret for HMAC-SHA256 signature verification |
+
+## Webhook Verification (GET)
+
+```
+GET /whatsapp/webhook?hub.mode=subscribe&hub.verify_token=<TOKEN>&hub.challenge=<CHALLENGE>
+```
+
+The handler checks `hub.mode == "subscribe"` and `hub.verify_token == WHATSAPP_VERIFY_TOKEN`, then returns the `hub.challenge` value as plain text.
+
+## Webhook Events (POST)
+
+```
+POST /whatsapp/webhook
+Header: X-Hub-Signature-256: sha256=<hmac>
+```
+
+The handler verifies the HMAC-SHA256 signature using `WHATSAPP_APP_SECRET`. The payload is a nested structure:
+
+```json
+{
+  "object": "whatsapp_business_account",
+  "entry": [{ "changes": [{ "field": "messages", "value": { "messages": [...], "contacts": [...] } }] }]
+}
+```
+
+Only `change.field == "messages"` entries are processed. Messages of type `text` are extracted from `value.messages`.
+
+## Sending Replies
+
+Replies are sent via `POST https://graph.facebook.com/v21.0/{phone_number_id}/messages` with Bearer authentication. Messages exceeding 4096 characters are truncated.
+
+</How>
+
+<Why>
+
+## Design Decisions
+
+**Two-endpoint design.** Meta requires a GET verification handshake at the same URL as POST events. Splitting the logic into `verify_handler` and `webhook_handler` keeps the routing clean and the verification path simple (no JSON parsing needed).
+
+**Nested payload structure.** The WhatsApp Cloud API wraps messages inside multiple layers (`entry` → `changes` → `value.messages`). The handler iterates all layers to correctly handle batch deliveries where multiple entries or changes arrive in a single webhook call.
+
+**Phone-number-stable sessions.** Using the sender's WhatsApp phone number as the session key gives each user a single persistent conversation thread regardless of how many webhook events arrive.
+
+</Why>

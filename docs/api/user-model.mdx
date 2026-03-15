@@ -1,14 +1,183 @@
 ---
 title: "User Model API"
-description: "Trait endpoints"
+description: "Observe, query, and manage inferred user traits and preferences"
 crate: genesis-gateway
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-gateway/src/lib.rs
+  - crates/genesis-storage/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ApiEndpoint } from '@site/src/components/ApiEndpoint';
+
+<ApiEndpoint method="GET" path="/user/traits" auth={true}>
 
 <What>
 
-*Content coming soon.*
+List user model traits: inferred facts, preferences, and behavioral patterns that Eve has observed about the user across sessions. Traits are used to personalise responses without requiring the user to repeat context.
 
 </What>
+
+<How>
+
+## Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `category` | `string` | — | Filter to a specific trait category |
+| `min_confidence` | `float` | — | Only return traits with confidence at or above this threshold (0.0–1.0) |
+
+## Response
+
+```json
+{
+  "traits": [
+    {
+      "trait_key": "preferred_language",
+      "category": "technical",
+      "value": "TypeScript",
+      "confidence": 0.92,
+      "source_session": "api-1741234567890-1",
+      "observed_at": "2026-03-15 10:30:00"
+    },
+    {
+      "trait_key": "timezone",
+      "category": "personal",
+      "value": "America/Los_Angeles",
+      "confidence": 0.78,
+      "source_session": null,
+      "observed_at": "2026-03-14 08:00:00"
+    }
+  ],
+  "count": 2
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `trait_key` | Unique identifier for this trait |
+| `category` | Semantic grouping (`technical`, `personal`, `communication`, etc.) |
+| `value` | The current inferred value |
+| `confidence` | Score 0.0–1.0 representing how certain Eve is about this trait |
+| `source_session` | Session where this trait was last updated, or `null` |
+
+</How>
+
+<Why>
+
+The user model is what makes Eve personalised. Reviewing it lets you audit what assumptions Eve has built up and catch any incorrect inferences before they affect future responses.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="POST" path="/user/traits" auth={true}>
+
+<What>
+
+Observe (create or update) a user trait. If the trait key already exists, the value and confidence are updated. This endpoint is used by the agent itself via the user model tools, but can also be called externally to inject known facts.
+
+</What>
+
+<How>
+
+## Request
+
+```json
+{
+  "trait_key": "preferred_language",
+  "category": "technical",
+  "value": "TypeScript",
+  "source_session": "api-1741234567890-1"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `trait_key` | Yes | Unique identifier for this trait |
+| `category` | Yes | Semantic category |
+| `value` | Yes | The observed value |
+| `source_session` | No | Session ID where this was observed |
+
+## Response
+
+The observed/updated trait object.
+
+</How>
+
+<Why>
+
+Inject known facts about a user before they start chatting (e.g., timezone from their account profile, language preference from their browser settings). This bootstraps personalisation without requiring any initial conversation.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="GET" path="/user/traits/{key}" auth={true}>
+
+<What>
+
+Fetch a single trait by its key. Returns `404` if the trait does not exist.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "trait_key": "preferred_language",
+  "category": "technical",
+  "value": "TypeScript",
+  "confidence": 0.92,
+  "source_session": "api-1741234567890-1",
+  "observed_at": "2026-03-15 10:30:00"
+}
+```
+
+</How>
+
+<Why>
+
+Check the current value and confidence for a specific trait before deciding whether to override it with a POST, or to display it in a user-facing settings panel.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="DELETE" path="/user/traits/{key}" auth={true}>
+
+<What>
+
+Delete a specific trait by key. Eve will no longer use this trait to personalise responses. Returns `404` if the trait does not exist.
+
+</What>
+
+<How>
+
+## Response
+
+```json
+{
+  "deleted": true,
+  "trait_key": "preferred_language"
+}
+```
+
+</How>
+
+<Why>
+
+Remove an incorrect trait so Eve stops acting on false assumptions. For example, if Eve incorrectly inferred a user's timezone, deleting that trait prevents it from affecting future scheduling or time-related responses.
+
+</Why>
+
+</ApiEndpoint>

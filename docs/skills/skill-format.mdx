@@ -1,16 +1,120 @@
 ---
 title: "SKILL.md Format"
-description: "Skill file specification"
+description: "YAML frontmatter + Markdown body skill file specification"
 crate: genesis-core
 source_files:
   - crates/genesis-core/src/skill_manifest.rs
-last_synced_commit: "0000000"
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+## What is SKILL.md?
+
+`SKILL.md` is a file format for portable, shareable agent skill definitions. It follows the [agentskills.io](https://agentskills.io) specification: YAML frontmatter for structured metadata, followed by Markdown for the instruction body.
+
+A SKILL.md file has two parts separated by `---` delimiters:
+
+```
+---
+[YAML frontmatter]
+---
+[Markdown instructions body]
+```
+
+This format is designed for progressive disclosure: lightweight metadata can be loaded without parsing the full instructions, which is useful when scanning large skill directories.
 
 </What>
+
+<How>
+
+## Full example
+
+```markdown
+---
+name: code-review
+description: Review code for bugs, style, and security issues
+version: "1.0"
+author: Genesis Team
+license: MIT
+tags:
+  - development
+  - quality
+allowed_tools:
+  - read_file
+  - shell_exec
+user_invocable: true
+disable_model_invocation: false
+---
+
+# Code Review
+
+Review the provided code for:
+
+1. Bug detection — look for null pointer dereferences, off-by-one errors, and type mismatches.
+2. Style consistency — check against the project's coding standards.
+3. Security vulnerabilities — flag any hardcoded credentials, injection risks, or missing input validation.
+
+## Steps
+
+1. Read the target file with `read_file`.
+2. Analyse each function for the above categories.
+3. Report findings in a structured format with file:line references.
+```
+
+## Frontmatter fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | `string` | Yes | — | Unique identifier. Must not be empty. |
+| `description` | `string` | No | `""` | Short summary for listings and skill picker UIs |
+| `version` | `string` | No | `""` | Semantic version string (e.g., `"1.0"`, `"2.3.1"`) |
+| `author` | `string` | No | `""` | Skill author name |
+| `license` | `string` | No | `""` | SPDX license identifier (e.g., `"MIT"`) |
+| `tags` | `string[]` | No | `[]` | Searchable category labels |
+| `allowed_tools` | `string[]` | No | `[]` | Tool names this skill is permitted to use (advisory) |
+| `user_invocable` | `bool` | No | `true` | Whether users can trigger this skill directly |
+| `disable_model_invocation` | `bool` | No | `false` | When `true`, the model cannot auto-invoke this skill |
+
+Any additional YAML keys are preserved in an `extra` map and available for custom tooling.
+
+## Instructions body
+
+Everything after the closing `---` delimiter is the Markdown instructions body. This text is injected verbatim into the agent's system prompt when the skill is active. There is no length limit, but shorter, more focused instructions generally produce better results than long catch-all procedures.
+
+## Directory layout
+
+When using `scan_skills_dir`, each skill should live in its own subdirectory:
+
+```
+~/.genesis/skills/
+  code-review/
+    SKILL.md
+  deploy-app/
+    SKILL.md
+    config.yaml   ← optional companion files
+```
+
+The scanner looks for `SKILL.md` inside each subdirectory. Files without a `SKILL.md` are skipped silently. Malformed SKILL.md files (missing frontmatter, missing `name` field, unclosed delimiters) are also skipped rather than causing a hard failure.
+
+## Parsing errors
+
+| Error | Cause |
+|-------|-------|
+| `MissingFrontmatter` | File does not start with `---` |
+| `UnclosedFrontmatter` | Opening `---` has no closing `---\n` |
+| `InvalidYaml` | Frontmatter contains invalid YAML |
+| `MissingName` | `name` field is absent or empty |
+| `Io` | File could not be read |
+
+</How>
+
+<Why>
+
+The SKILL.md format was chosen because it is human-readable, diff-friendly, and version-control friendly. A skill is just a text file — you can review it, edit it in any text editor, and commit it to a repository. The YAML/Markdown split mirrors the design of static site generators and package manifests, which developers are already familiar with.
+
+The progressive disclosure approach (metadata-only scan vs. full parse) means that discovering what skills are available is fast even with hundreds of skills in a directory, since the instructions body only needs to be loaded when a skill is actually being invoked.
+
+</Why>

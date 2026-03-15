@@ -1,14 +1,99 @@
 ---
 title: "genesis memory"
-description: "Memory management"
+description: "Inspect and manage stored memories"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-storage/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="memory" usage="genesis memory <SUBCOMMAND>" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis memory`?
+
+The `memory` command manages Eve's persistent fact store. During conversations, Eve (or you) can store facts, preferences, and observations as memories. These are injected into the system prompt at the start of each session so Eve remembers them without needing the full conversation history to be present.
+
+Memories are distinct from session history: session history is the verbatim conversation, while memories are distilled facts that persist across sessions. The `memory` CLI lets you browse what Eve knows about you, search for specific facts, and delete outdated or incorrect entries.
 
 </What>
+
+<How>
+
+## Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List stored memories |
+| `search <QUERY>` | Search memories using full-text search |
+| `delete <ID>` | Delete a memory by ID |
+
+## Options by Subcommand
+
+### `memory list`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--limit <N>` | `usize` | Maximum number of memories to show (default: 50) |
+
+### `memory search <QUERY>`
+| Flag | Type | Description |
+|------|------|-------------|
+| `--limit <N>` | `usize` | Maximum results to return (default: 10) |
+
+## Examples
+
+**List recent memories:**
+```bash
+genesis memory list
+```
+
+**List up to 100 memories:**
+```bash
+genesis memory list --limit 100
+```
+
+**Search for memories about a topic:**
+```bash
+genesis memory search "preferred language"
+genesis memory search "project deadline"
+```
+
+**Delete a specific memory:**
+```bash
+genesis memory delete mem-abc123
+```
+
+**Machine-readable output:**
+```bash
+genesis memory list --json
+genesis memory search "api key" --json
+```
+
+</How>
+
+<Why>
+
+## Memory vs Session History
+
+Session history is the raw transcript of a conversation. It is complete but large — loading full history for a long session can consume significant context window space. Memories are distilled extracts: short, factual statements about the user, their preferences, and their environment. They are injected as a compact block at the start of every session, giving Eve relevant context without the bulk of historical turns.
+
+## FTS5 Full-Text Search
+
+Memories are stored in SQLite with FTS5 full-text indexing. The `memory search` subcommand uses this index to find relevant memories by keyword across all stored entries. This is the same mechanism used by the `memory_search` tool that Eve calls internally when trying to recall facts during a conversation.
+
+## Memory Nudge
+
+After extended sessions, the agent loop emits a memory nudge prompting Eve to extract new facts from the conversation and store them as memories. This is how the memory store grows over time without requiring manual intervention. The nudge is triggered based on session length and turn count.
+
+## Editing Memories
+
+There is no `memory edit` subcommand. To correct an inaccurate memory, delete it with `memory delete` and either let Eve re-learn the correct fact during the next conversation, or use the `memory_add` tool within a chat session to store the corrected version directly.
+
+</Why>
+
+</CliCommand>

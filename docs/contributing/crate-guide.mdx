@@ -8,6 +8,148 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+Genesis is a Cargo workspace with 13 crates. Each crate has a clearly bounded responsibility — new code should go into the crate that already owns that domain rather than growing the binary entry point or adding dependencies upstream. Think of the crates like floors in a building: the lower floors are utility layers with no knowledge of the floors above them, and the upper floors compose the utilities into user-facing behaviour.
+
+Understanding which crate to touch first is the most important orientation step for any new contributor.
 
 </What>
+
+<How>
+
+### Dependency flow
+
+```
+apps/genesis  (binary entry point)
+└── genesis-cli
+    ├── genesis-auth
+    ├── genesis-core
+    │   ├── genesis-provider
+    │   ├── genesis-tools
+    │   ├── genesis-storage
+    │   └── genesis-mcp
+    ├── genesis-gateway
+    ├── genesis-config
+    ├── genesis-ui
+    └── genesis-tui
+
+genesis-types  (shared primitives, no dependencies on other genesis crates)
+```
+
+Lower crates (`genesis-types`, `genesis-config`, `genesis-storage`) do not import from upper crates. Circular dependencies are prevented by Cargo's workspace resolver.
+
+### Crate responsibilities
+
+#### `apps/genesis`
+The compiled binary. Contains only `main.rs`. Initialises `tracing`, detects TUI mode, delegates everything to `genesis-cli::run()`. Do not put business logic here.
+
+**Add code here:** never. The binary is a thin launcher.
+
+---
+
+#### `crates/genesis-types`
+Shared primitive types used across multiple crates: `ToolDefinition`, `ConversationMessage`, `ConversationRole`, `DeliveryPlatform`, `ModelSelection`, `UsageStats`, `ProviderTurnRequest/Response`, `StopReason`.
+
+Has **no dependencies on other genesis crates**. This is what allows every other crate to import it without creating a cycle.
+
+**Add code here:** only truly shared types that have no meaningful home in a more specific crate and that multiple crates genuinely need.
+
+---
+
+#### `crates/genesis-config`
+Config loading from `~/.genesis/config.yaml` (or `.toml`). Defines all config structs (`GenesisConfig`, `ProviderConfig`, `RuntimeConfig`, `StorageConfig`, `GatewayConfig`, `TuiConfig`, etc.) and the `load()` / `load_from_map()` functions. Handles env var overrides and profile resolution.
+
+**Add code here:** new config keys and their corresponding struct fields. The `example_config()` function should be updated to reflect new defaults.
+
+---
+
+#### `crates/genesis-storage`
+Single-file SQLite database via `rusqlite` (bundled, no system dependency). Owns the schema bootstrap (`bootstrap()`) and all store types: `SessionStore`, `MemoryStore`, `SkillStore`, `SkillUsageStore`, `SkillFileStore`, `ScheduleStore`, `UserModelStore`, `SubagentStore`, `PairingStore`, `ResponseCacheStore`, `AuditLogStore`, `AgentBusStore`. Uses FTS5 for full-text search.
+
+**Add code here:** new database tables, store types, and queries. Tests must use `tempfile::tempdir()` for isolation.
+
+---
+
+#### `crates/genesis-provider`
+Async HTTP client for LLM providers. Implements the OpenAI Chat Completions API and adapts Anthropic and Gemini transparently. Handles SSE streaming, retry with exponential backoff, prompt caching (`cache_control` injection for Anthropic/OpenRouter), and tool-call parsing for models that embed tool calls in text (Hermes, Qwen, Llama, DeepSeek, Mistral, Kimi, GLM).
+
+**Add code here:** new provider adapters, tool-call parsers, or streaming logic.
+
+---
+
+#### `crates/genesis-tools`
+The tool registry and all 60+ builtin tools. Defines the `ToolHandler` trait, `ToolRegistry`, `ToolCall`, `ToolContext`, `ToolOutput`, and `ApprovalPolicy`. Tools live in `src/builtins/` as individual modules; `default_registry()` in `src/lib.rs` registers all of them.
+
+**Add code here:** new builtin tools. See the [Adding a Tool](/docs/contributing/adding-a-tool) guide.
+
+---
+
+#### `crates/genesis-mcp`
+MCP (Model Context Protocol) client. `McpManager` manages multiple concurrent MCP server connections over stdio or HTTP transports, with auto-reconnect on failure. Also exposes Genesis's own tool registry as an MCP server via `run_stdio_server()`.
+
+**Add code here:** MCP transport improvements, new server management features.
+
+---
+
+#### `crates/genesis-core`
+The agent loop and all orchestration logic. Key modules:
+
+| Module | Responsibility |
+|---|---|
+| `agent_loop.rs` | Main `User → LLM → [tool → LLM]* → response` loop, context compression, stuck-loop detection, cancellation |
+| `execution.rs` | `SessionExecutionService` — the unified execution path for CLI, gateway, and scheduler |
+| `system_prompt.rs` | `SystemPromptBuilder` — composes prompts with platform hints, skills, memories, context files |
+| `scheduler.rs` | Background cron job runtime |
+| `hooks.rs` | Agent lifecycle hooks (PreTurn, PostTurn, PreToolCall, PostToolCall, OnError, OnComplete) |
+| `skills.rs` | SKILL.md parser and skill nudge logic |
+| `guardrails.rs` | Input/output validation rules |
+| `context_security.rs` | Prompt injection scanning |
+| `agent_bus.rs` | Inter-agent pub/sub message bus |
+
+**Add code here:** agent behaviour, new LLM orchestration patterns, session lifecycle logic.
+
+---
+
+#### `crates/genesis-auth`
+OAuth device code flow for LLM provider login. Manages credential storage (`AuthStore`), token refresh, and OpenAI Codex credential migration. Exposes `ResolvedCredentials`, `AuthError`, `AuthMode`, and `CodexTokens`.
+
+**Add code here:** new OAuth provider integrations or credential migration paths.
+
+---
+
+#### `crates/genesis-gateway`
+Axum HTTP API server (`genesis serve`). Implements 50+ REST routes across sessions, skills, memories, schedules, usage, tools, and platform webhooks (Telegram, Discord, Slack, WhatsApp, Home Assistant). Handles HMAC-SHA256 and Ed25519 webhook verification, IP-based rate limiting, and CORS.
+
+**Add code here:** new API routes, webhook platform integrations.
+
+---
+
+#### `crates/genesis-cli`
+All `genesis <subcommand>` implementations. Parses the `Cli` struct via `clap`, dispatches to command handlers, and wires up the TUI or readline chat interface. Contains slash-command handling (`src/slash.rs`), output formatting (`src/format.rs`), and worktree management.
+
+**Add code here:** new CLI subcommands and interactive chat features.
+
+---
+
+#### `crates/genesis-ui`
+Rendering primitives for the legacy readline (`--no-tui`) chat mode: Markdown streaming renderer (`StreamMarkdown`), status bar, tool-call display (`ToolCallBuffer`), ANSI colour helpers, and the animated Eve banner. Does not depend on `ratatui`.
+
+**Add code here:** non-ratatui rendering improvements, new CLI output formatting.
+
+---
+
+#### `crates/genesis-tui`
+The full ratatui TUI (`genesis chat` without `--no-tui`). Manages the custom terminal wrapper with an inline viewport, dual-buffer diff rendering, frame scheduling, the event loop, and all TUI widgets (transcript, input, status bar, command popup, welcome screen). Redirects logs to `~/.genesis/logs/tui.log`.
+
+**Add code here:** TUI widgets, layout changes, viewport or rendering improvements.
+
+</How>
+
+<Why>
+
+The crate split exists primarily to enforce dependency discipline and keep compile times manageable. By isolating `genesis-types` with zero internal dependencies, every other crate can import core primitives without risk of cycles. By isolating `genesis-storage` from the agent logic, the storage layer can be tested in complete isolation from the LLM and tool machinery.
+
+`genesis-core` is intentionally the heaviest crate — it is the integration point between storage, provider, tools, and MCP. Keeping orchestration logic centralised in one place means the CLI, gateway, and scheduler all use identical session execution paths (`SessionExecutionService`), preventing subtle behavioural divergence between deployment modes.
+
+`genesis-ui` and `genesis-tui` are separate because `ratatui` is a significant dependency with different terminal control requirements. The legacy readline interface (`genesis-ui`) works over any terminal or pipe, while the TUI requires an interactive terminal with raw mode support. Splitting them means the gateway server (`genesis-gateway`) can produce CLI-formatted output without pulling in `ratatui` at all.
+
+</Why>

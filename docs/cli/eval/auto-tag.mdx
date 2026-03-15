@@ -1,13 +1,65 @@
 ---
 title: "eval auto-tag"
-description: "Automatic semantic tagging"
-last_synced_commit: "0000000"
+description: "Automatically tag trajectory files using semantic analysis"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-core/src/tagger.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval auto-tag" usage="genesis eval auto-tag --dir <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval auto-tag`?
+
+The `auto-tag` command analyzes each trajectory file in a directory and automatically adds semantic tags based on what the trajectory contains. Tags are derived from tool usage patterns (e.g. `file-ops`, `shell`, `git`, `web`), conversation outcome, depth, and the model used. Tags are written back into the trajectory JSON files in place. Use `--dry-run` to preview the tags that would be added without modifying any files. Tagged trajectories can then be filtered with `eval filter --tag` or browsed with `eval tag-stats`.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `--dir <DIR>` | `string` | Yes | Directory containing trajectory JSON files |
+| `--recursive` | `bool` | No | Recursively scan nested directories |
+| `--dry-run` | `bool` | No | Only print the tags that would be added without writing files |
+
+## Examples
+
+```bash
+# Tag all trajectories in a directory
+genesis eval auto-tag --dir ./trajectories
+
+# Preview tags without writing
+genesis eval auto-tag --dir ./trajectories --dry-run
+
+# Recursively tag nested directories
+genesis eval auto-tag --dir ./trajectories --recursive
+```
+
+</How>
+
+<Why>
+
+## Tagging Logic
+
+The tagger in `genesis-core/src/tagger.rs` applies tags across five categories:
+
+- **Tool-based**: `file-ops`, `shell`, `git`, `web`, `memory`, `vision`, `code-execution`, `no-tools`
+- **Outcome-based**: `success`, `failure`, `partial`
+- **Depth-based**: `single-turn`, `multi-turn`, `deep` (based on step count thresholds)
+- **Content-based**: keywords in the conversation (e.g. `debugging`, `refactoring`, `analysis`)
+- **Model-based**: the model name is added as a tag (e.g. `gpt-4.1`, `claude-sonnet-4-6`)
+
+Tags are stored as a sorted list on the trajectory object. Running `auto-tag` multiple times is safe — existing tags are merged with newly computed tags rather than replaced.
+
+</Why>
+
+</CliCommand>

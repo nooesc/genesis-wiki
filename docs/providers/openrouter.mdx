@@ -1,7 +1,10 @@
 ---
 title: "OpenRouter"
-description: "OpenRouter with provider routing"
+description: "OpenRouter provider with routing strategies, provider allowlists, and prompt caching"
 crate: genesis-provider
+source_files:
+  - crates/genesis-provider/src/resolve.rs
+  - crates/genesis-provider/src/client.rs
 last_synced_commit: "0000000"
 ---
 
@@ -9,6 +12,65 @@ import { What, How, Why } from '@site/src/components/TierContent';
 
 <What>
 
-*Content coming soon.*
+OpenRouter aggregates access to hundreds of models from multiple providers under a single API key. The Genesis `openrouter` backend uses the standard OpenAI Chat Completions format (no translation needed) and also supports prompt caching via `cache_control` injection.
+
+OpenRouter's model IDs use `provider/model` format: `anthropic/claude-sonnet-4-20250514`, `openai/gpt-4.1`, `google/gemini-2.5-flash`.
 
 </What>
+
+<How>
+
+### Configuration
+
+```yaml
+# ~/.genesis/config.yaml
+model: anthropic/claude-sonnet-4-20250514
+backend: openrouter
+```
+
+API key is read from `OPENROUTER_API_KEY`. The default base URL is `https://openrouter.ai/api/v1`. Requests go to `/chat/completions`.
+
+### Provider routing via extra_body
+
+OpenRouter supports provider-specific routing through extra fields in the request body. Genesis passes these via `extra_body` in the `ChatCompletionRequest`:
+
+```yaml
+# In config or passed programmatically
+extra_body:
+  provider:
+    sort: "throughput"          # "price", "throughput", "latency"
+    allow_fallbacks: false       # stay on the selected provider
+    order:
+      - "Anthropic"
+      - "AWS Bedrock"
+```
+
+The `prepare_body` function in `client.rs` merges `extra_body` fields into the top-level JSON object before sending. This means any OpenRouter provider routing parameter can be passed through without Genesis needing to explicitly model each option.
+
+### Prompt caching
+
+OpenRouter supports Anthropic-style `cache_control` for models that support prompt caching. Because `supports_prompt_caching("openrouter")` returns `true`, the `inject_cache_control` function automatically adds cache markers to system messages and the last tool definition on every OpenRouter request.
+
+When the underlying model is a Claude model served via OpenRouter, this triggers Anthropic's prompt caching. For other models that don't support caching, OpenRouter ignores the `cache_control` field.
+
+### Model-specific parsers
+
+When using OpenRouter with open-source models (Hermes, DeepSeek, Llama, etc.), you may need to configure a tool call parser explicitly:
+
+```yaml
+backend: openrouter
+model: nousresearch/hermes-3-llama-3.1-70b
+tool_call_parser: hermes
+```
+
+See [Parsers](./parsers) for the full list.
+
+</How>
+
+<Why>
+
+**No translation layer.** OpenRouter accepts the OpenAI Chat Completions format natively, so the `openrouter` backend path is identical to `openai` at the HTTP level — same endpoint structure, same `Authorization: Bearer` header. The only difference is the default base URL and the `cache_control` injection.
+
+**extra_body for routing.** Rather than adding provider-routing fields to the `ChatCompletionRequest` struct (which would pollute the type with OpenRouter-specific concerns), routing parameters are passed through `extra_body`. This keeps the core types clean while giving full access to OpenRouter's advanced routing features.
+
+</Why>

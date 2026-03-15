@@ -1,13 +1,52 @@
 ---
 title: "eval export-chatml"
-description: "Export as ChatML JSONL"
-last_synced_commit: "0000000"
+description: "Export a directory of trajectories as ChatML JSONL"
+crate: genesis-cli
+source_files:
+  - crates/genesis-cli/src/lib.rs
+last_synced_commit: "b5dc4bb"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="eval export-chatml" usage="genesis eval export-chatml <DIR> [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis eval export-chatml`?
+
+The `export-chatml` command converts a directory of Genesis trajectory JSON files into the ChatML JSONL format. Each trajectory becomes one line in the output JSONL file, with the conversation serialized as a list of `{"role": "...", "content": "..."}` objects in the standard ChatML schema. The output is written to stdout, so you can redirect it to a file or pipe it into a training pipeline. Use this when you need to fine-tune a model using ChatML-formatted training data.
 
 </What>
+
+<How>
+
+## Arguments and Options
+
+| Arg/Flag | Type | Required | Description |
+|----------|------|----------|-------------|
+| `<DIR>` | `string` | Yes | Directory containing trajectory JSON files |
+| `--recursive` | `bool` | No | Recursively scan nested directories for trajectory JSON files |
+
+## Examples
+
+```bash
+# Export all trajectories in a directory to ChatML JSONL
+genesis eval export-chatml ./trajectories > dataset.jsonl
+
+# Recursively export from nested directories
+genesis eval export-chatml ./trajectories --recursive > dataset.jsonl
+```
+
+</How>
+
+<Why>
+
+## Implementation Notes
+
+ChatML is the standard format used by most open-weight fine-tuning frameworks (Axolotl, LLaMA-Factory, etc.). Each trajectory's message history is mapped directly to a ChatML conversation: system messages become `{"role": "system", ...}`, user turns become `{"role": "user", ...}`, and assistant turns (including tool calls) become `{"role": "assistant", ...}`. Tool result messages are mapped to `{"role": "tool", ...}`. Trajectories with no assistant turns are skipped to avoid malformed training examples.
+
+</Why>
+
+</CliCommand>
