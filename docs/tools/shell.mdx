@@ -4,13 +4,190 @@ description: "Execute shell commands"
 crate: genesis-tools
 source_files:
   - crates/genesis-tools/src/builtins/shell.rs
-last_synced_commit: "0000000"
+  - crates/genesis-tools/src/builtins/process_registry.rs
+last_synced_commit: "878d55b"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ToolRef } from '@site/src/components/ToolRef';
+
+<ToolRef name="shell_exec" module="builtins/shell.rs" crate="genesis-tools">
 
 <What>
 
-*Content coming soon.*
+## What Does the Shell Tool Do?
+
+The shell tool is Eve's hands. While other tools let her read files, search the web, or manage memories, the shell tool lets her run any command on your system -- just like you would in a terminal.
+
+When Eve needs to compile code, run tests, check disk space, install a package, or do anything that requires a terminal command, she uses `shell_exec`. The tool runs the command, captures everything it prints (both normal output and errors), and returns the result so Eve can reason about what happened.
+
+The tool includes several safety mechanisms to protect you:
+
+- **Dangerous command blocking**: Commands like `rm -rf /`, fork bombs, and piping remote scripts to shell are automatically rejected before they ever execute.
+- **Timeout protection**: Commands that run longer than the configured timeout (default: 2 minutes) are killed automatically, preventing runaway processes.
+- **Output truncation**: If a command produces massive output, it is truncated to 64 KiB to avoid overwhelming the conversation context.
+- **Sandboxed backend awareness**: When running inside Docker, Singularity, Modal, or Daytona containers, the dangerous command checks are skipped because the container itself provides the security boundary.
+
+You can also run commands in the background by setting `background=true`. This spawns the command as a tracked process and returns a session ID immediately, which you can monitor later using the `process` tool.
 
 </What>
+
+<How>
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `command` | `string` | Yes | -- | The shell command to execute |
+| `working_dir` | `string` | No | Context default | Working directory for the command |
+| `timeout` | `string` | No | `"120"` | Timeout in seconds; command is killed if exceeded (foreground only) |
+| `background` | `string` | No | `"false"` | Set to `"true"` to run in background; returns session ID immediately |
+
+## Example: Foreground Execution
+
+```json
+{
+  "name": "shell_exec",
+  "arguments": {
+    "command": "cargo test --workspace",
+    "working_dir": "/home/user/my-project",
+    "timeout": "300"
+  }
+}
+```
+
+**Response:**
+```
+running 42 tests
+test tests::basic_parse ... ok
+test tests::edge_case ... ok
+...
+test result: ok. 42 passed; 0 failed; 0 ignored
+```
+
+## Example: Background Execution
+
+```json
+{
+  "name": "shell_exec",
+  "arguments": {
+    "command": "npm run build",
+    "working_dir": "/app",
+    "background": "true"
+  }
+}
+```
+
+**Response:**
+```
+Background process started with session ID: proc_a1b2c3d4e5f6
+Use the `process` tool with action 'poll' or 'log' to check progress.
+```
+
+## Dangerous Command Blocking
+
+The following patterns are blocked on non-sandboxed backends:
+
+| Pattern | Reason |
+|---------|--------|
+| `rm -rf /` or `rm -rf /*` | Recursive deletion of root filesystem |
+| `rm -rf ~` | Recursive deletion of home directory |
+| `mkfs.*` | Formatting a filesystem |
+| `dd if=` | Raw disk write |
+| `:(){:\|:&};:` | Fork bomb |
+| `chmod 777` / `chmod -R 777` | World-writable permissions |
+| `> /dev/sda` | Raw disk overwrite |
+| `shutdown` / `reboot` | System power control |
+| `kill -9 1` | Killing init process |
+| `iptables -F` | Flushing firewall rules |
+| `curl ... \| sh` / `wget ... \| bash` | Piping remote script to shell |
+| `shred` | Secure file deletion |
+
+Blocked commands return an `ApprovalDenied` error with the specific reason:
+
+```
+Error: command blocked: recursive force delete of root filesystem. Command: `rm -rf /`
+```
+
+## Terminal Backends
+
+The shell tool adapts its execution based on the configured terminal backend:
+
+| Backend | How Commands Run |
+|---------|-----------------|
+| **Local** (default) | `sh -c "command"` |
+| **Docker** | `docker exec [-w dir] [-u user] container sh -c "command"` |
+| **SSH** | `ssh [-p port] [-i key] user@host "command"` |
+| **Singularity** | `singularity exec [--bind ...] [--pwd dir] image sh -c "command"` |
+| **Modal** | `modal shell [--app ...] [--gpu ...] [--image ...] --cmd "command"` |
+| **Daytona** | `daytona exec -- sh -c "command"` |
+
+## Output Format
+
+The tool combines stdout and stderr into a single response:
+
+```
+stdout content here
+[stderr]
+stderr content here
+```
+
+If the command produces no output, the tool returns:
+```
+(no output, exit code 0)
+```
+
+The exit code is always included in the response metadata.
+
+</How>
+
+<Why>
+
+## Why String Parameters Instead of Native Types?
+
+All parameters are `string` type in the JSON schema, even `timeout` and `background` which are logically numeric/boolean. This is intentional:
+
+- **LLM compatibility**: Many models reliably produce string values but sometimes emit bare numbers or booleans without quotes, which can cause JSON parse failures with strict schemas. Accepting strings and parsing server-side (`v.parse::<u64>()`) is more robust.
+- **Consistency**: Every tool in the Genesis registry uses strings for all parameters. This uniformity means the LLM does not need to learn different type conventions for different tools.
+
+## Why Pattern Matching Instead of a Sandbox?
+
+The dangerous command detection uses simple substring matching against a static list of known-dangerous patterns. This is not a security sandbox -- it is a guardrail against obvious accidents. The design rationale:
+
+- **Speed**: Pattern matching is nanoseconds. Parsing commands into ASTs or running them through a policy engine would add latency to every tool call.
+- **Transparency**: The blocked patterns list is human-readable and auditable. A user can look at `DANGEROUS_PATTERNS` and understand exactly what is blocked.
+- **Escape hatch via sandboxing**: For environments where the agent needs to run risky commands (CI pipelines, training runs), the Docker/Singularity/Modal/Daytona backends skip dangerous command checks entirely. The container is the real security boundary.
+
+The `is_piped_download_to_shell` check is more sophisticated -- it splits on pipe characters and checks if any segment starting with `curl`/`wget` feeds into a later `sh`/`bash`/`zsh` segment, handling arbitrary arguments between the download command and pipe.
+
+## Why Separate stdout and stderr?
+
+The tool captures stdout and stderr on separate threads and combines them in the response with a `[stderr]` marker. This separation matters because:
+
+- **Exit code + stderr = actionable errors**: When a command fails (exit code != 0), the LLM can see exactly what went wrong in the stderr section and fix it.
+- **stdout alone can be misleading**: Many tools write progress/warnings to stderr while writing actual output to stdout. Mixing them without labels loses this distinction.
+- **Thread-based capture**: Each stream is read on its own thread to prevent deadlocks. If stdout fills its OS pipe buffer while the parent is reading stderr (or vice versa), both sides block forever. Dedicated threads prevent this.
+
+## Why a 50ms Poll Loop for Timeouts?
+
+The tool uses `child.try_wait()` in a loop with 50ms sleeps rather than a blocking `child.wait_timeout()`. This is because Rust's standard library does not provide `wait_timeout` on `Child`. The 50ms interval balances responsiveness (timeout fires within 50ms of the deadline) against CPU usage (20 wakeups per second is negligible).
+
+When timeout fires, the tool first does a final `try_wait()` in case the process just finished. If still running, it calls `kill()` and then `wait()` to reap the zombie. The `is_no_process_error` helper handles the race where the process exits between the deadline check and the kill call.
+
+## Output Truncation: 64 KiB with UTF-8 Safety
+
+Tool output is capped at 64 KiB (roughly 16K tokens). The truncation algorithm:
+
+1. Walk backward from the 64 KiB byte offset until a valid UTF-8 character boundary is found
+2. Within that valid range, find the last newline to avoid cutting mid-line
+3. Append `... (output truncated)` so the LLM knows the output was clipped
+
+The byte-level truncation (`truncate_output_bytes`) is used for raw process output, while the string-level variant (`truncate_output`) is used when the content is already valid UTF-8. Both ensure the result is always valid UTF-8 and never exceeds the size limit.
+
+## Sandbox Manager Integration
+
+When a `sandbox_manager` is present in the tool context (for lifecycle-managed backends like Singularity/Modal/Daytona), the shell tool delegates entirely to `execute_in_sandbox()` instead of spawning a local process. This enables container lifecycle management (starting, stopping, resource allocation) to be handled by the sandbox layer while the shell tool remains a simple command executor.
+
+</Why>
+
+</ToolRef>
