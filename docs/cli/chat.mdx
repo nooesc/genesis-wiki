@@ -2,13 +2,159 @@
 title: "genesis chat"
 description: "Interactive Eve chat session"
 crate: genesis-cli
-last_synced_commit: "0000000"
+source_files:
+  - crates/genesis-cli/src/lib.rs
+  - crates/genesis-cli/src/chat.rs
+last_synced_commit: "878d55b"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { CliCommand } from '@site/src/components/CliCommand';
+
+<CliCommand name="chat" usage="genesis chat [OPTIONS]" source="genesis-cli/src/lib.rs">
 
 <What>
 
-*Content coming soon.*
+## What is `genesis chat`?
+
+The `chat` command is the primary way to interact with Eve on your terminal. It starts an interactive conversation session where you type messages, Eve responds, and the conversation continues for as long as you need.
+
+Think of it as opening a chat window with an AI assistant who can see your filesystem, run commands, search the web, and remember things between sessions. Unlike the `run` command (which sends a single prompt and exits), `chat` keeps the conversation going in a loop until you decide to stop.
+
+When you start a chat, Genesis creates a new session (or resumes an existing one), loads Eve's system prompt and any relevant memories, and drops you into an interactive prompt. You type your message, press Enter, and Eve responds -- possibly running tools, reading files, or executing commands along the way. You see tool activity in real time as Eve works through multi-step tasks.
+
+Each session is saved to the local SQLite database, so your conversation history persists. You can resume any previous session later using `--resume` or `--last`.
 
 </What>
+
+<How>
+
+## Options
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--session-id <ID>` | `string` | Override the auto-generated session ID |
+| `--resume <ID>` | `string` | Resume an existing session by ID |
+| `--last` | `bool` | Resume the most recent session |
+| `-p, --prompt <TEXT>` | `string` | Send an initial prompt before entering interactive mode |
+| `--system <TEXT>` | `string` | Override the system prompt / agent identity |
+| `--worktree` | `bool` | Run in an isolated git worktree (requires a git repository) |
+| `--clipboard` | `bool` | Attach the clipboard image to the first message |
+| `--no-tui` | `bool` | Disable the TUI and use legacy readline mode |
+
+## Usage Examples
+
+**Start a new session:**
+```bash
+genesis chat
+```
+
+**Resume the last session:**
+```bash
+genesis chat --last
+```
+
+**Resume a specific session:**
+```bash
+genesis chat --resume session-abc123
+```
+
+**Send an initial prompt:**
+```bash
+genesis chat --prompt "Review the code in src/main.rs"
+```
+
+**Start with a custom system prompt:**
+```bash
+genesis chat --system "You are a security auditor. Focus on finding vulnerabilities."
+```
+
+**Attach a screenshot from clipboard:**
+```bash
+genesis chat --clipboard --prompt "What's in this screenshot?"
+```
+
+**Use git worktree isolation:**
+```bash
+genesis chat --worktree --prompt "Refactor the auth module"
+```
+
+**Disable the TUI for compatibility:**
+```bash
+genesis chat --no-tui
+```
+
+## Interactive Commands
+
+Once inside a chat session, you can use slash commands:
+
+| Command | Description |
+|---------|-------------|
+| `/new` | Start a fresh conversation (clears session) |
+| `/id` | Show the current session ID |
+| `/config` | Show current model and session info |
+| `/model` | Show the active model |
+| `/cost` | Show token usage and estimated cost |
+| `/help` | List available commands |
+
+## Session ID Format
+
+Auto-generated session IDs use the format `chat-{timestamp}-{sequence}`, where the timestamp is milliseconds since epoch. You can override this with `--session-id` for reproducible or meaningful session names.
+
+## Exit
+
+Press `Ctrl+C` or `Ctrl+D` to end the session. The conversation is saved automatically.
+
+</How>
+
+<Why>
+
+## Why Interactive Mode as the Default?
+
+The `chat` command opens an interactive session by default rather than requiring a prompt argument. This mirrors how humans naturally interact with AI assistants -- as an ongoing conversation, not a series of isolated commands. The `run` command exists for single-shot scripting use cases, keeping the two patterns cleanly separated.
+
+## Session Resume Strategy
+
+The `--resume` and `--last` flags serve different workflows:
+
+- **`--last`** is for the common case of "I was just talking to Eve and want to continue." It looks up the most recent session by timestamp.
+- **`--resume <ID>`** is for deliberate session management -- returning to a specific conversation from days ago, or sharing session IDs between team members.
+
+When resuming, the full message history is loaded from SQLite and replayed into the agent loop's context. The system prompt and memories are rebuilt fresh (in case they have changed since the session was created), but the conversation history itself is preserved exactly.
+
+## Git Worktree Isolation
+
+The `--worktree` flag creates a temporary git worktree and sets it as the default working directory for all shell commands during the session. This provides a sandbox for file modifications:
+
+- Eve can edit files, run tests, and make changes without affecting your working branch.
+- If the changes look good, you can merge the worktree branch.
+- If not, the worktree is cleaned up automatically when the session ends (via `WorktreeGuard`).
+
+This is particularly valuable for refactoring tasks or experimental changes where you want Eve to work freely without risking your uncommitted changes.
+
+## Why `--no-tui`?
+
+The TUI (Terminal User Interface) provides a rich interactive experience with scrollback, syntax highlighting, and real-time tool activity display. However, it requires a terminal that supports ANSI escape sequences and alternate screen buffers. The `--no-tui` flag falls back to a simple readline-based interface for environments where the TUI does not work:
+
+- SSH sessions with minimal terminal capabilities
+- CI/CD pipelines that capture stdout
+- Screen readers and accessibility tools that work better with plain text
+- Piped input/output scenarios
+
+## The `--clipboard` Flag
+
+Multimodal support starts at the CLI level. The `--clipboard` flag reads the system clipboard, and if it contains an image, attaches it to the first message as a base64-encoded image URL. This enables a quick workflow: take a screenshot, switch to the terminal, and ask Eve about it. The image is sent alongside the `--prompt` text (or the first interactive message if no prompt is provided).
+
+## Initial Prompt Flow
+
+When `--prompt` is provided, the chat command sends it as the first user message before entering interactive mode. This is useful for:
+
+- **Automation**: Start a session with a specific task, then let the user take over for follow-up questions.
+- **Context setting**: Give Eve an initial task that establishes the conversation context before the interactive loop begins.
+- **Quick questions**: If the first response is sufficient, the user can immediately exit. But unlike `run`, the interactive loop still starts, allowing follow-ups.
+
+The prompt is sent through the same `SessionExecutionService` path as all other messages, so it benefits from the full agent loop (tool calling, context management, hooks).
+
+</Why>
+
+</CliCommand>
