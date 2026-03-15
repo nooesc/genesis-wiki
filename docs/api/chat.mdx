@@ -3,14 +3,378 @@ title: "Chat API"
 description: "Chat, streaming, batch endpoints"
 crate: genesis-gateway
 source_files:
-  - crates/genesis-gateway/src/commands.rs
-last_synced_commit: "0000000"
+  - crates/genesis-gateway/src/lib.rs
+last_synced_commit: "878d55b"
 ---
 
 import { What, How, Why } from '@site/src/components/TierContent';
+import { ApiEndpoint } from '@site/src/components/ApiEndpoint';
+
+<ApiEndpoint method="POST" path="/chat" auth={true}>
 
 <What>
 
-*Content coming soon.*
+## What is the Chat Endpoint?
+
+The `/chat` endpoint is the primary way to talk to Eve over HTTP. You send a message, Eve processes it (which may involve thinking, running tools, and thinking again), and you get back a complete response once she is done.
+
+This is the simplest way to integrate with Genesis. It works like a synchronous function call: you send a request and wait for the response. Behind the scenes, Eve may take multiple "turns" calling tools and reasoning, but you do not see any of that -- you just get the final answer.
+
+The endpoint supports multimodal input (text plus images), custom system prompts, model overrides, and structured output formats. Every request creates or continues a session, so you can have multi-turn conversations by reusing the same `session_id`.
 
 </What>
+
+<How>
+
+## Request
+
+```json
+{
+  "message": "What files are in the current directory?",
+  "platform": "api",
+  "session_id": "my-session-123",
+  "images": [
+    {
+      "url": "https://example.com/screenshot.png",
+      "detail": "high"
+    }
+  ],
+  "system_prompt": "You are a helpful coding assistant.",
+  "response_format": {
+    "type": "json_object"
+  },
+  "model": "anthropic/claude-sonnet-4"
+}
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `message` | `string` | Yes | -- | The user's message |
+| `platform` | `string` | No | `"api"` | Platform identifier (affects session grouping) |
+| `session_id` | `string` | No | Auto-generated | Session ID for conversation continuity |
+| `images` | `ImageInput[]` | No | `[]` | Image attachments for multimodal prompts |
+| `system_prompt` | `string` | No | Config default | Override the system prompt for this request |
+| `response_format` | `ResponseFormat` | No | `null` | Constrain output format (`json_object`, `json_schema`, `text`) |
+| `model` | `string` | No | Config default | Model override as `"backend/model"` or just `"model"` |
+
+## Response
+
+```json
+{
+  "session_id": "my-session-123",
+  "response": "The current directory contains the following files:\n- src/\n- Cargo.toml\n- README.md",
+  "turns_used": 2,
+  "tool_calls_made": 1,
+  "estimated_cost": 0.0034,
+  "total_input_tokens": 1250,
+  "total_output_tokens": 89,
+  "pending_clarification": null
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `string` | The session ID used (auto-generated if not provided) |
+| `response` | `string` | Eve's final text response |
+| `turns_used` | `number` | Number of LLM round-trips taken |
+| `tool_calls_made` | `number` | Total tool invocations during processing |
+| `estimated_cost` | `number?` | Estimated USD cost (null if model not in pricing table) |
+| `total_input_tokens` | `number` | Cumulative prompt tokens consumed |
+| `total_output_tokens` | `number` | Cumulative completion tokens generated |
+| `pending_clarification` | `string?` | If set, Eve is paused waiting for more information |
+
+## Error Responses
+
+- **500** -- Execution error (provider failure, tool crash, etc.)
+
+```json
+{
+  "error": "execution error: provider error: rate limit exceeded"
+}
+```
+
+</How>
+
+<Why>
+
+## Why Blocking Instead of Always Streaming?
+
+The blocking `/chat` endpoint exists alongside `/chat/stream` because many integration patterns work better with request/response semantics:
+
+- **Webhooks**: Platform webhooks (Telegram, Slack, Discord) need a complete response to send back. SSE streaming does not map to webhook response formats.
+- **Batch processing**: When running many prompts through `/chat/batch`, each item uses the blocking path internally.
+- **Simplicity**: For scripts and CLI tools, `curl -X POST /chat` with a JSON body is the simplest possible integration. No SSE parsing, no event handling, no connection management.
+
+The cost is latency visibility -- the caller has no idea what Eve is doing until the full response arrives. For interactive UIs, the streaming endpoint is preferred.
+
+## Session ID Generation
+
+When no `session_id` is provided, the gateway generates one using the format `api-{timestamp_ms}-{sequence}`. The timestamp ensures rough chronological ordering, while the atomic sequence counter prevents collisions from concurrent requests within the same millisecond. This scheme avoids UUIDs (which are longer and not sortable) while remaining collision-free within a single gateway process.
+
+## Webhook Integration
+
+Every chat request emits lifecycle webhooks: `message_received` when the request arrives, `response_sent` when processing completes (with token counts and cost), and `error` if something fails. These are dispatched asynchronously by the `WebhookDispatcher` and do not block the response. This allows external systems (monitoring, billing, analytics) to observe agent activity without modifying the request/response flow.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="POST" path="/chat/stream" auth={true}>
+
+<What>
+
+## What is the Streaming Chat Endpoint?
+
+The `/chat/stream` endpoint is the real-time version of `/chat`. Instead of waiting for Eve to finish completely, you receive a stream of Server-Sent Events (SSE) as she works. You see text chunks appear as the LLM generates them, tool call notifications when Eve invokes a tool, and a final `done` event with the complete result.
+
+This is the preferred endpoint for interactive UIs where you want users to see Eve's response appearing in real time, similar to how ChatGPT or Claude stream their responses.
+
+</What>
+
+<How>
+
+## Request
+
+The request body is identical to `/chat`:
+
+```json
+{
+  "message": "Explain how the agent loop works",
+  "session_id": "stream-session-1",
+  "platform": "api"
+}
+```
+
+## SSE Event Stream
+
+The response is an SSE stream with the following event types:
+
+### `session` -- Connection established
+
+```json
+{"session_id": "stream-session-1"}
+```
+
+### `chunk` -- Text content fragment
+
+```json
+{"session_id": "stream-session-1", "content": "The agent loop is"}
+```
+
+### `tool_call` -- Tool execution started
+
+```json
+{"session_id": "stream-session-1", "tool": "shell_exec"}
+```
+
+### `clarification` -- Agent needs user input
+
+```json
+{"session_id": "stream-session-1", "question": "Which branch should I deploy?"}
+```
+
+### `done` -- Final result
+
+```json
+{
+  "session_id": "stream-session-1",
+  "response": "The agent loop is a think-act-think cycle...",
+  "turns_used": 1,
+  "tool_calls_made": 0,
+  "estimated_cost": 0.0012,
+  "total_input_tokens": 850,
+  "total_output_tokens": 234
+}
+```
+
+### `error` -- Processing failed
+
+```json
+{"session_id": "stream-session-1", "error": "provider error: connection refused"}
+```
+
+## JavaScript Client Example
+
+```javascript
+const eventSource = new EventSource('/chat/stream', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ message: 'Hello Eve' })
+});
+
+eventSource.addEventListener('chunk', (e) => {
+  const { content } = JSON.parse(e.data);
+  process.stdout.write(content);
+});
+
+eventSource.addEventListener('done', (e) => {
+  const result = JSON.parse(e.data);
+  console.log(`\n[${result.turns_used} turns, ${result.tool_calls_made} tools]`);
+  eventSource.close();
+});
+```
+
+</How>
+
+<Why>
+
+## Why SSE Instead of WebSocket?
+
+Genesis uses Server-Sent Events for streaming rather than WebSocket for several reasons:
+
+- **Unidirectional fit**: The streaming chat pattern is inherently one-way -- the client sends one request, the server streams back multiple events. SSE is purpose-built for this pattern. WebSocket's bidirectional capability is unused overhead.
+- **HTTP compatibility**: SSE works over standard HTTP, so it passes through proxies, load balancers, and CDNs without special configuration. WebSocket requires protocol upgrade support.
+- **Automatic reconnection**: The browser's `EventSource` API handles reconnection natively. With WebSocket, you must implement reconnection logic yourself.
+
+Genesis does also expose a `/chat/ws` WebSocket endpoint for clients that need bidirectional communication, but SSE is the primary streaming interface.
+
+## Spawned Task Architecture
+
+The stream handler spawns a `tokio::spawn` task to run the agent loop, communicating back to the HTTP response via an unbounded `mpsc` channel. This decouples the agent execution from the HTTP connection lifecycle:
+
+- If the client disconnects mid-stream, the agent task continues to completion (tool calls are not left half-finished).
+- The unbounded channel ensures the agent never blocks waiting for the client to consume events. Events that arrive after client disconnect are simply dropped.
+
+The SSE response uses Axum's `Sse` type with `KeepAlive` enabled to prevent proxy timeouts during long tool executions.
+
+</Why>
+
+</ApiEndpoint>
+
+---
+
+<ApiEndpoint method="POST" path="/chat/batch" auth={true}>
+
+<What>
+
+## What is the Batch Chat Endpoint?
+
+The `/chat/batch` endpoint lets you send multiple messages to Eve at once and have them processed in parallel. Each message runs independently with its own session, and you get back all the results in a single response.
+
+This is useful for bulk operations: processing a list of questions, running the same prompt against different datasets, or generating training data. Instead of making 50 sequential API calls, you send one batch request and let the server handle concurrency.
+
+</What>
+
+<How>
+
+## Request
+
+```json
+{
+  "items": [
+    {
+      "message": "Summarize this error log",
+      "session_id": "batch-1",
+      "platform": "api"
+    },
+    {
+      "message": "What does this function do?",
+      "session_id": "batch-2",
+      "system_prompt": "You are a code reviewer."
+    },
+    {
+      "message": "Translate to Spanish: Hello world",
+      "session_id": "batch-3"
+    }
+  ],
+  "concurrency": 4
+}
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `items` | `BatchItem[]` | Yes | -- | Array of chat requests (1-100 items) |
+| `concurrency` | `number` | No | `4` | Max parallel executions (1-16) |
+
+Each `BatchItem` has the same fields as a `/chat` request: `message`, `platform`, `session_id`, `images`, `system_prompt`, and `response_format`.
+
+## Response
+
+```json
+{
+  "results": [
+    {
+      "index": 0,
+      "session_id": "batch-1",
+      "response": "The error log shows a connection timeout...",
+      "error": null,
+      "turns_used": 1,
+      "tool_calls_made": 0,
+      "estimated_cost": 0.0008,
+      "total_input_tokens": 430,
+      "total_output_tokens": 67
+    },
+    {
+      "index": 1,
+      "session_id": "batch-2",
+      "response": "This function implements a binary search...",
+      "error": null,
+      "turns_used": 2,
+      "tool_calls_made": 1,
+      "estimated_cost": 0.0021,
+      "total_input_tokens": 890,
+      "total_output_tokens": 112
+    },
+    {
+      "index": 2,
+      "session_id": "batch-3",
+      "response": null,
+      "error": "provider error: rate limit exceeded",
+      "turns_used": 0,
+      "tool_calls_made": 0,
+      "estimated_cost": null,
+      "total_input_tokens": 0,
+      "total_output_tokens": 0
+    }
+  ],
+  "total_items": 3,
+  "successful": 2,
+  "failed": 1,
+  "total_estimated_cost": 0.0029
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `results` | `BatchItemResult[]` | Ordered results matching input indices |
+| `total_items` | `number` | Number of items submitted |
+| `successful` | `number` | Items that completed without error |
+| `failed` | `number` | Items that returned errors |
+| `total_estimated_cost` | `number?` | Sum of all successful item costs |
+
+## Limits
+
+- **Maximum batch size**: 100 items
+- **Maximum concurrency**: 16 (clamped)
+- **Minimum concurrency**: 1 (clamped)
+
+</How>
+
+<Why>
+
+## Why Semaphore-Based Concurrency?
+
+The batch handler uses a `tokio::Semaphore` to limit concurrent executions rather than chunking the items into groups:
+
+- **Better utilization**: With chunking (e.g., process 4 items, wait for all, process next 4), a slow item blocks the entire chunk. With a semaphore, each item acquires a permit independently, so a fast item completing immediately frees its permit for the next item in the queue.
+- **Natural backpressure**: The semaphore prevents more than `concurrency` agent loops from running simultaneously, protecting the system from memory exhaustion when processing large batches.
+
+The concurrency is clamped to a maximum of 16 (`MAX_BATCH_CONCURRENCY`) to prevent a single batch request from monopolizing all server resources. The batch size cap of 100 (`MAX_BATCH_SIZE`) prevents request payloads from growing unbounded.
+
+## Partial Failure Handling
+
+Individual batch items can fail without failing the entire batch. Each item result includes either a `response` (on success) or an `error` (on failure), with all other fields zeroed for failed items. The top-level `successful` and `failed` counters give a quick summary. This design lets callers handle failures granularly -- retry only the failed items, log them separately, or ignore them based on their use case.
+
+## Why No Streaming for Batch?
+
+Batch results are returned as a single JSON response, not streamed. This is because:
+
+- **Ordering matters**: Clients expect results indexed by their input position. Streaming would deliver results out of order as faster items complete first.
+- **Batch semantics**: The purpose of batch is "submit N items, get N results." Streaming would turn it into N independent streams, which is what N calls to `/chat/stream` already provides.
+- **Atomicity**: Returning all results together makes it easy to calculate aggregate statistics (total cost, success rate) on the server side.
+
+</Why>
+
+</ApiEndpoint>
