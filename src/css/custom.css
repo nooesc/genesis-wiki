@@ -1,1 +1,87 @@
-/* Eve theme — populated in Task 2 */
+/* ============================================
+   Genesis Wiki — Eve Theme
+   ============================================ */
+
+/* --- Light Mode (Clean) --- */
+:root {
+  --ifm-color-primary: #7B68AE;
+  --ifm-color-primary-dark: #6B57A1;
+  --ifm-color-primary-darker: #635099;
+  --ifm-color-primary-darkest: #51427E;
+  --ifm-color-primary-light: #8B79BB;
+  --ifm-color-primary-lighter: #9384C2;
+  --ifm-color-primary-lightest: #ADA1D3;
+  --ifm-background-color: #FAFAFA;
+  --ifm-background-surface-color: #FFFFFF;
+  --ifm-font-color-base: #2D2D2D;
+  --ifm-font-color-secondary: #6C6C6C;
+  --ifm-code-background: #F5F2F8;
+  --ifm-link-color: #7B68AE;
+  --ifm-navbar-background-color: #FFFFFF;
+  --ifm-navbar-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --ifm-footer-background-color: #F5F2F8;
+  --ifm-toc-border-color: #E8E0F0;
+  --ifm-hr-border-color: #E8E0F0;
+
+  /* Eve-specific tokens */
+  --eve-surface: #FFFFFF;
+  --eve-surface-border: #E8E0F0;
+  --eve-accent-primary: #7B68AE;
+  --eve-accent-secondary: #B8863E;
+  --eve-success: #5F8A3F;
+  --eve-error: #C24B4B;
+  --eve-warning: #B8863E;
+  --eve-code-bg: #F5F2F8;
+  --eve-sidebar-active-bg: #F0ECF5;
+}
+
+/* --- Dark Mode (Eve-branded) --- */
+[data-theme="dark"] {
+  --ifm-color-primary: #B4A7D6;
+  --ifm-color-primary-dark: #A192CC;
+  --ifm-color-primary-darker: #9788C7;
+  --ifm-color-primary-darkest: #7B68AE;
+  --ifm-color-primary-light: #C7BCE0;
+  --ifm-color-primary-lighter: #D1C8E5;
+  --ifm-color-primary-lightest: #E5E0F0;
+  --ifm-background-color: #1a1025;
+  --ifm-background-surface-color: #2D1B4E;
+  --ifm-font-color-base: #D5CCE6;
+  --ifm-font-color-secondary: #8A8A8A;
+  --ifm-code-background: #1E1230;
+  --ifm-link-color: #B4A7D6;
+  --ifm-navbar-background-color: #2D1B4E;
+  --ifm-navbar-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --ifm-footer-background-color: #1E1230;
+  --ifm-toc-border-color: #3d2b5e;
+  --ifm-hr-border-color: #3d2b5e;
+
+  /* Eve-specific tokens */
+  --eve-surface: #2D1B4E;
+  --eve-surface-border: #3d2b5e;
+  --eve-accent-primary: #B4A7D6;
+  --eve-accent-secondary: #D4A574;
+  --eve-success: #87AF5F;
+  --eve-error: #D75F5F;
+  --eve-warning: #D7AF5F;
+  --eve-code-bg: #1E1230;
+  --eve-sidebar-active-bg: #3d2b5e;
+}
+
+/* --- Global overrides --- */
+.navbar {
+  border-bottom: 1px solid var(--eve-surface-border);
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  background-color: var(--eve-sidebar-active-bg);
+}
+
+code {
+  border: 1px solid var(--eve-surface-border);
+}
+
+/* Prism code block overrides for dark mode */
+[data-theme="dark"] .prism-code {
+  background-color: var(--eve-code-bg) !important;
+}
