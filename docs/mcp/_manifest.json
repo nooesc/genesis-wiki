@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_globs": [],
+  "entries": {
+    "overview.mdx": {
+      "sources": [
+        "crates/genesis-mcp/src/lib.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "client.mdx": {
+      "sources": [
+        "crates/genesis-mcp/src/client.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "server.mdx": {
+      "sources": [
+        "crates/genesis-mcp/src/server.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    }
+  }
+}

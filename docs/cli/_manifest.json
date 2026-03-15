@@ -1,0 +1,312 @@
+{
+  "schema_version": 1,
+  "source_globs": [],
+  "entries": {
+    "chat.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "run.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "serve.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "batch.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "sessions.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "skills.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "tools.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "schedule.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "model.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "config.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "doctor.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "info.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "status.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "memory.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "personality.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "nudge.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "insights.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "context.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "subagents.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "workflow.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "mcp.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "benchmark.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "pairing.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "toolset.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "init.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "bootstrap.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "login.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "logout.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "storage.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "compress.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "update.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "completions.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "uninstall.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "eval.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    }
+  }
+}

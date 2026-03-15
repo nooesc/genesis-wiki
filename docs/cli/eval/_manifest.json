@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "source_globs": [],
+  "entries": {
+    "report.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "summarize.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "compare.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "export-chatml.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "export-sharegpt.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "import-chatml.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "import-sharegpt.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "convert.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "stats.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "quality.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "auto-tag.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "tag-stats.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "deduplicate.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "filter.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "split.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "merge.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "manifest.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "validate.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "pipeline.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "sample.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    }
+  }
+}

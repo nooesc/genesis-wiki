@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "source_globs": [],
+  "entries": {
+    "overview.mdx": {
+      "sources": [
+        "Cargo.toml"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "crate-map.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "agent-loop.mdx": {
+      "sources": [
+        "crates/genesis-core/src/agent_loop.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "execution-service.mdx": {
+      "sources": [
+        "crates/genesis-core/src/execution.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "provider-abstraction.mdx": {
+      "sources": [
+        "crates/genesis-provider/src/client.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "type-system.mdx": {
+      "sources": [
+        "crates/genesis-types/src/lib.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "source_globs": [],
+  "entries": {
+    "testing.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "error-handling.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "adding-a-tool.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "crate-guide.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    }
+  }
+}

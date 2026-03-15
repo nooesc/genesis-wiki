@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "source_globs": [],
+  "entries": {
+    "overview.mdx": {
+      "sources": [
+        "crates/genesis-provider/src/client.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "openai.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "anthropic.mdx": {
+      "sources": [
+        "crates/genesis-provider/src/anthropic_types.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "gemini.mdx": {
+      "sources": [
+        "crates/genesis-provider/src/gemini_types.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "openrouter.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "deepseek.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "compatible.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "parsers.mdx": {
+      "sources": [
+        "crates/genesis-provider/src/parsers.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    }
+  }
+}

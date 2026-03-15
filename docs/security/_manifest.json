@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "source_globs": [],
+  "entries": {
+    "context-security.mdx": {
+      "sources": [
+        "crates/genesis-core/src/context_security.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "guardrails.mdx": {
+      "sources": [
+        "crates/genesis-core/src/guardrails.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "credential-redaction.mdx": {
+      "sources": [
+        "crates/genesis-core/src/sanitize.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "auth-pairing.mdx": {
+      "sources": [
+        "crates/genesis-auth/src/codex.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    }
+  }
+}

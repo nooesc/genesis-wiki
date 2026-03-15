@@ -1,0 +1,402 @@
+{
+  "schema_version": 1,
+  "source_globs": [],
+  "entries": {
+    "shell.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/shell.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "git.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/git.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "fs.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/fs.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "glob.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/glob.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "tree.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/tree.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "patch.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/patch.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "search.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/search.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "web.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/web.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "web-search.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/web_search.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "browse.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/browse.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "browser.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/browser.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "vision.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/vision.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "image-gen.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/image_gen.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "tts.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/tts.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "transcribe.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/transcribe.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "memory.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/memory.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "skill.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/skill.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "skill-file.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/skill_file.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "subagent.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/subagent.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "session.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/session.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "schedule.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/schedule.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "todo.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/todo.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "clarify.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/clarify.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "reason.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/reason.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "export.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/export.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "trajectory.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/trajectory.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "send-message.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/send_message.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "channel-directory.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/channel_directory.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "user-model.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/user_model.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "code-execution.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/code_execution.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "homeassistant.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/homeassistant.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "docker.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/docker.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "ssh.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/ssh.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "process.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/process.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "process-registry.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/process_registry.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "mixture.mdx": {
+      "sources": [
+        "crates/genesis-tools/src/builtins/mixture.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    }
+  }
+}

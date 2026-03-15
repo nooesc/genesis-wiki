@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_globs": [],
+  "entries": {
+    "overview.mdx": {
+      "sources": [
+        "crates/genesis-core/src/skills.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "skill-format.mdx": {
+      "sources": [
+        "crates/genesis-core/src/skill_manifest.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "skills-hub.mdx": {
+      "sources": [
+        "crates/genesis-core/src/skills_hub.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    }
+  }
+}

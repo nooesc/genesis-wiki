@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "source_globs": [],
+  "entries": {
+    "eval-system.mdx": {
+      "sources": [
+        "crates/genesis-core/src/eval.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "training-pipeline.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "workflows.mdx": {
+      "sources": [
+        "crates/genesis-core/src/workflow.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "scheduler.mdx": {
+      "sources": [
+        "crates/genesis-core/src/scheduler.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "hooks.mdx": {
+      "sources": [
+        "crates/genesis-core/src/hooks.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "personalities.mdx": {
+      "sources": [
+        "crates/genesis-core/src/personality.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "sandbox.mdx": {
+      "sources": [],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    },
+    "embedding.mdx": {
+      "sources": [
+        "crates/genesis-core/src/embedding.rs"
+      ],
+      "last_synced_commit": "0000000",
+      "tier_coverage": {
+        "what": false,
+        "how": false,
+        "why": false
+      }
+    }
+  }
+}
